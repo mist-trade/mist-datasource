@@ -257,6 +257,42 @@ uv run pyright src/
 
 使用 PowerShell 脚本一键部署（需要管理员权限）：
 
+### SDK 路径约束
+
+Windows 生产部署不会复制或打包通达信 / miniQMT SDK 文件。服务通过 `.env` 中的绝对路径引用已授权机器上的现有安装。
+
+TDX 预期目录结构：
+
+```text
+D:/tdx/PYPlugins/
+├── TPythClient.dll
+└── user/
+    └── tqcenter.py
+```
+
+`TDX_SDK_PATH` 必须指向 `user` 目录：
+
+```env
+TDX_SDK_PATH=D:/tdx/PYPlugins/user
+```
+
+不要只复制 `tqcenter.py` 到部署包。`TPythClient.dll` 由 SDK 内部按父目录关系定位，移动目录后需要同步修改 `.env`，并可能需要在通达信终端里清理旧策略身份。
+
+QMT 预期配置：
+
+```env
+QMT_PATH=D:/miniQMT
+QMT_SDK_PATH=D:/miniQMT/Lib
+```
+
+留空 `QMT_SDK_PATH` 会跳过 QMT 服务注册。
+
+部署前可先运行 SDK 预检：
+
+```powershell
+.\scripts\preflight-sdk.ps1
+```
+
 ```powershell
 # 完整部署（安装依赖 + 运行测试 + 注册服务）
 .\scripts\deploy_windows.ps1

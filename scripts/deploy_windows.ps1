@@ -20,7 +20,30 @@ $LogsDir = Join-Path $ProjectDir "logs"
 
 function Write-Step($msg) { Write-Host "`n===== $msg =====" -ForegroundColor Cyan }
 function Write-Ok($msg)   { Write-Host "  [OK] $msg" -ForegroundColor Green }
+function Write-Warn($msg) { Write-Host "  [WARN] $msg" -ForegroundColor Yellow }
 function Write-Fail($msg) { Write-Host "  [FAIL] $msg" -ForegroundColor Red }
+
+function Get-EnvValue($content, $name) {
+    $pattern = "(?m)^\s*$([regex]::Escape($name))\s*=\s*(.*?)\s*(?:#.*)?$"
+    $match = [regex]::Match($content, $pattern)
+    if (-not $match.Success) { return "" }
+    return $match.Groups[1].Value.Trim().Trim('"').Trim("'")
+}
+
+function Resolve-NssmExe {
+    $cmd = Get-Command nssm -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+
+    $candidates = @(
+        (Join-Path $ProjectDir "..\nssm\nssm.exe"),
+        (Join-Path $ProjectDir "nssm\nssm.exe")
+    )
+    foreach ($candidate in $candidates) {
+        $resolved = [System.IO.Path]::GetFullPath($candidate)
+        if (Test-Path $resolved -PathType Leaf) { return $resolved }
+    }
+    return $null
+}
 
 # ---- 前置检查 ----
 if ($Only -and $Only -notin @("install", "test", "service")) {
@@ -71,20 +94,15 @@ if (-not $Only -or $Only -eq "install") {
 
     # 检查 .env 中的关键配置
     $envContent = Get-Content $envFile -Raw
-    $appEnv = if ($envContent -match 'APP_ENV\s*=\s*(\S+)') { $Matches[1] } else { "" }
+    $appEnv = Get-EnvValue $envContent "APP_ENV"
     if ($appEnv -eq "production") {
         Write-Ok "APP_ENV=production (生产模式)"
 
-        $tdxSdk = if ($envContent -match 'TDX_SDK_PATH\s*=\s*(.+)') { $Matches[1].Trim() } else { "" }
-        if ($tdxSdk -and $tdxSdk -ne "") {
-            if (Test-Path $tdxSdk) {
-                Write-Ok "TDX_SDK_PATH=$tdxSdk (目录存在)"
-            } else {
-                Write-Fail "TDX_SDK_PATH=$tdxSdk 目录不存在!"
-                exit 1
-            }
+        $preflight = Join-Path $PSScriptRoot "preflight-sdk.ps1"
+        if (Test-Path $preflight -PathType Leaf) {
+            & $preflight -EnvFile $envFile
         } else {
-            Write-Host "  [WARN] TDX_SDK_PATH 未设置, TDX 实例将无法启动" -ForegroundColor Yellow
+            Write-Warn "preflight-sdk.ps1 未找到, 跳过 SDK 布局检查"
         }
     } else {
         Write-Host "  [INFO] APP_ENV=$appEnv (开发模式, 使用 mock adapter)" -ForegroundColor Yellow
@@ -92,8 +110,7 @@ if (-not $Only -or $Only -eq "install") {
 
     # 检查 NSSM (仅注册服务时需要)
     if ((-not $SkipService) -and (-not $Only -or $Only -eq "service")) {
-        $nssmExe = $null
-        try { $nssmExe = (Get-Command nssm -ErrorAction Stop).Source } catch {}
+        $nssmExe = Resolve-NssmExe
         if (-not $nssmExe) {
             Write-Fail "NSSM 未安装。请下载 nssm.cc 并加入 PATH"
             Write-Host "  下载地址: https://nssm.cc/download" -ForegroundColor Yellow
@@ -115,7 +132,8 @@ if (-not $Only -or $Only -eq "install") {
         $prevEAP = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
         # 所有依赖都在主依赖列表中, 不需要 extra 参数
-        $syncArgs = @("sync")
+        $lockFile = Join-Path $ProjectDir "uv.lock"
+        $syncArgs = if (Test-Path $lockFile -PathType Leaf) { @("sync", "--locked") } else { @("sync") }
         & uv @syncArgs 2>$null | Out-Null
         $syncExit = $LASTEXITCODE
         $ErrorActionPreference = $prevEAP
@@ -211,7 +229,7 @@ if (-not $Only -or $Only -eq "test") {
     # 测试 QMT 实例 (仅在配置了 QMT_SDK_PATH 时)
     Write-Step "Step 4/5: 测试 QMT 实例启动"
 
-    $qmtSdk = if ($envContent -match 'QMT_SDK_PATH\s*=\s*(.+)') { $Matches[1].Trim() } else { "" }
+    $qmtSdk = Get-EnvValue $envContent "QMT_SDK_PATH"
     if (-not $qmtSdk -or $qmtSdk -eq "") {
         Write-Host "  跳过 QMT 测试 (QMT_SDK_PATH 未配置)" -ForegroundColor Yellow
     } else {
@@ -252,53 +270,72 @@ if ((-not $SkipService) -and (-not $Only -or $Only -eq "service")) {
     Write-Step "Step 5/5: 注册 NSSM 服务"
 
     $venvPython = Join-Path $ProjectDir ".venv\Scripts\python.exe"
+    $envFile = Join-Path $ProjectDir ".env"
+    if (-not (Test-Path $envFile -PathType Leaf)) {
+        Write-Fail ".env 不存在, 无法注册服务"
+        exit 1
+    }
+    $envContent = Get-Content $envFile -Raw
+    $qmtSdk = Get-EnvValue $envContent "QMT_SDK_PATH"
+    $qmtEnabled = $qmtSdk -and $qmtSdk -ne ""
+    $nssmExe = Resolve-NssmExe
+    if (-not $nssmExe) {
+        Write-Fail "NSSM 未安装, 且未在部署包中找到 nssm\nssm.exe"
+        Write-Host "  可将 nssm.exe 放到部署包的 nssm 目录, 或加入 PATH" -ForegroundColor Yellow
+        exit 1
+    }
+    Write-Ok "NSSM: $nssmExe"
 
     # --- TDX 服务 ---
     $tdxService = "MistTDX"
     $prevEAP2 = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    $existing = nssm status $tdxService 2>&1
+    $existing = & $nssmExe status $tdxService 2>&1
     $ErrorActionPreference = $prevEAP2
     if ($existing -match "SERVICE_RUNNING|SERVICE_STOPPED") {
         Write-Host "  $tdxService 已存在 (状态: $existing), 跳过注册" -ForegroundColor Yellow
     } else {
-        nssm install $tdxService $venvPython "-m uvicorn tdx.main:app --host 0.0.0.0 --port 9001"
-        nssm set $tdxService AppDirectory $ProjectDir
-        nssm set $tdxService DisplayName "Mist TDX DataSource"
-        nssm set $tdxService Description "通达信数据源 HTTP/WS 服务 (port 9001)"
-        nssm set $tdxService Start SERVICE_AUTO_START
-        nssm set $tdxService AppStdout (Join-Path $LogsDir "tdx-stdout.log")
-        nssm set $tdxService AppStderr (Join-Path $LogsDir "tdx-stderr.log")
-        nssm set $tdxService AppRotateFiles 1
-        nssm set $tdxService AppRotateBytes 10485760
+        & $nssmExe install $tdxService $venvPython "-m uvicorn tdx.main:app --host 127.0.0.1 --port 9001"
+        & $nssmExe set $tdxService AppDirectory $ProjectDir
+        & $nssmExe set $tdxService DisplayName "Mist TDX DataSource"
+        & $nssmExe set $tdxService Description "通达信数据源 HTTP/WS 服务 (port 9001)"
+        & $nssmExe set $tdxService Start SERVICE_AUTO_START
+        & $nssmExe set $tdxService AppStdout (Join-Path $LogsDir "tdx-stdout.log")
+        & $nssmExe set $tdxService AppStderr (Join-Path $LogsDir "tdx-stderr.log")
+        & $nssmExe set $tdxService AppRotateFiles 1
+        & $nssmExe set $tdxService AppRotateBytes 10485760
         Write-Ok "$tdxService 服务已注册"
     }
 
     # --- QMT 服务 ---
     $qmtService = "MistQMT"
-    $prevEAP3 = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    $existing = nssm status $qmtService 2>&1
-    $ErrorActionPreference = $prevEAP3
-    if ($existing -match "SERVICE_RUNNING|SERVICE_STOPPED") {
-        Write-Host "  $qmtService 已存在 (状态: $existing), 跳过注册" -ForegroundColor Yellow
+    if (-not $qmtEnabled) {
+        Write-Warn "QMT_SDK_PATH 未配置, 跳过 MistQMT 服务注册"
     } else {
-        nssm install $qmtService $venvPython "-m uvicorn qmt.main:app --host 0.0.0.0 --port 9002"
-        nssm set $qmtService AppDirectory $ProjectDir
-        nssm set $qmtService DisplayName "Mist QMT DataSource"
-        nssm set $qmtService Description "QMT 数据源 HTTP/WS 服务 (port 9002)"
-        nssm set $qmtService Start SERVICE_AUTO_START
-        nssm set $qmtService AppStdout (Join-Path $LogsDir "qmt-stdout.log")
-        nssm set $qmtService AppStderr (Join-Path $LogsDir "qmt-stderr.log")
-        nssm set $qmtService AppRotateFiles 1
-        nssm set $qmtService AppRotateBytes 10485760
-        Write-Ok "$qmtService 服务已注册"
+        $prevEAP3 = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        $existing = & $nssmExe status $qmtService 2>&1
+        $ErrorActionPreference = $prevEAP3
+        if ($existing -match "SERVICE_RUNNING|SERVICE_STOPPED") {
+            Write-Host "  $qmtService 已存在 (状态: $existing), 跳过注册" -ForegroundColor Yellow
+        } else {
+            & $nssmExe install $qmtService $venvPython "-m uvicorn qmt.main:app --host 127.0.0.1 --port 9002"
+            & $nssmExe set $qmtService AppDirectory $ProjectDir
+            & $nssmExe set $qmtService DisplayName "Mist QMT DataSource"
+            & $nssmExe set $qmtService Description "QMT 数据源 HTTP/WS 服务 (port 9002)"
+            & $nssmExe set $qmtService Start SERVICE_AUTO_START
+            & $nssmExe set $qmtService AppStdout (Join-Path $LogsDir "qmt-stdout.log")
+            & $nssmExe set $qmtService AppStderr (Join-Path $LogsDir "qmt-stderr.log")
+            & $nssmExe set $qmtService AppRotateFiles 1
+            & $nssmExe set $qmtService AppRotateBytes 10485760
+            Write-Ok "$qmtService 服务已注册"
+        }
     }
 
     # 启动服务
     Write-Host "`n  启动服务..." -ForegroundColor Cyan
-    nssm start $tdxService
-    nssm start $qmtService
+    & $nssmExe start $tdxService
+    if ($qmtEnabled) { & $nssmExe start $qmtService }
 
     Start-Sleep -Seconds 3
 
@@ -311,12 +348,16 @@ if ((-not $SkipService) -and (-not $Only -or $Only -eq "service")) {
     } catch {
         Write-Fail "TDX 服务启动失败"
     }
-    try {
-        $resp = Invoke-WebRequest -Uri "http://127.0.0.1:9002/health" -TimeoutSec 5 -UseBasicParsing
-        $body = $resp.Content | ConvertFrom-Json
-        Write-Ok "QMT: status=$($body.status), adapter=$($body.adapter)"
-    } catch {
-        Write-Fail "QMT 服务启动失败"
+    if ($qmtEnabled) {
+        try {
+            $resp = Invoke-WebRequest -Uri "http://127.0.0.1:9002/health" -TimeoutSec 5 -UseBasicParsing
+            $body = $resp.Content | ConvertFrom-Json
+            Write-Ok "QMT: status=$($body.status), adapter=$($body.adapter)"
+        } catch {
+            Write-Fail "QMT 服务启动失败"
+        }
+    } else {
+        Write-Warn "QMT 未配置, 已跳过最终验证"
     }
 }
 

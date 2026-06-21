@@ -148,4 +148,4 @@ Thumbs.db
 
 # uv
 .uv/
-uv.lock
+!uv.lock
