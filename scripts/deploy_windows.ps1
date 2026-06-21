@@ -18,32 +18,8 @@ $ErrorActionPreference = "Stop"
 $ProjectDir = $PSScriptRoot | Split-Path -Parent
 $LogsDir = Join-Path $ProjectDir "logs"
 
-function Write-Step($msg) { Write-Host "`n===== $msg =====" -ForegroundColor Cyan }
-function Write-Ok($msg)   { Write-Host "  [OK] $msg" -ForegroundColor Green }
-function Write-Warn($msg) { Write-Host "  [WARN] $msg" -ForegroundColor Yellow }
-function Write-Fail($msg) { Write-Host "  [FAIL] $msg" -ForegroundColor Red }
-
-function Get-EnvValue($content, $name) {
-    $pattern = "(?m)^\s*$([regex]::Escape($name))\s*=\s*(.*?)\s*(?:#.*)?$"
-    $match = [regex]::Match($content, $pattern)
-    if (-not $match.Success) { return "" }
-    return $match.Groups[1].Value.Trim().Trim('"').Trim("'")
-}
-
-function Resolve-NssmExe {
-    $cmd = Get-Command nssm -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-
-    $candidates = @(
-        (Join-Path $ProjectDir "..\nssm\nssm.exe"),
-        (Join-Path $ProjectDir "nssm\nssm.exe")
-    )
-    foreach ($candidate in $candidates) {
-        $resolved = [System.IO.Path]::GetFullPath($candidate)
-        if (Test-Path $resolved -PathType Leaf) { return $resolved }
-    }
-    return $null
-}
+. "$PSScriptRoot\windows-common.ps1"
+. "$PSScriptRoot\service-common.ps1"
 
 # ---- 前置检查 ----
 if ($Only -and $Only -notin @("install", "test", "service")) {
@@ -189,27 +165,18 @@ if (-not $Only -or $Only -eq "test") {
         Write-Fail "TDX 实例启动后立即退出 (exit code: $($proc.ExitCode))"
         Get-Content $tdxTestErr -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
     } else {
-        for ($i = 1; $i -le 5; $i++) {
-            try {
-                $resp = Invoke-WebRequest -Uri "http://127.0.0.1:9001/health" -TimeoutSec 5 -UseBasicParsing
-                $body = $resp.Content | ConvertFrom-Json
-                Write-Ok "TDX health: status=$($body.status), adapter=$($body.adapter)"
-                $tdxOk = $true
-                break
-            } catch {
-                if ($i -lt 5) {
-                    Write-Host "  等待 TDX 启动... ($i/5)" -ForegroundColor Yellow
-                    Start-Sleep -Seconds 3
-                } else {
-                    Write-Fail "TDX health 接口无响应 (已重试 5 次)"
-                    Get-Content $tdxTestErr -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
-                    Get-Content $tdxTestLog -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
-                }
-            }
+        $tdxOk = Wait-HttpHealth `
+            -Name "TDX" `
+            -Url "http://127.0.0.1:9001/health" `
+            -Attempts 5 `
+            -DelaySeconds 3 `
+            -TimeoutSeconds 5
+        if (-not $tdxOk) {
+            Get-Content $tdxTestErr -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
+            Get-Content $tdxTestLog -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
         }
         if (-not $proc.HasExited) {
-            $proc.Kill()
-            $proc.WaitForExit(5000)
+            Stop-ProcessTreeBestEffort -Process $proc
         }
     }
 
@@ -249,16 +216,16 @@ if (-not $Only -or $Only -eq "test") {
             Write-Fail "QMT 实例启动后立即退出 (exit code: $($qmtProc.ExitCode))"
             Get-Content $qmtTestErr -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
         } else {
-            try {
-                $resp = Invoke-WebRequest -Uri "http://127.0.0.1:9002/health" -TimeoutSec 5 -UseBasicParsing
-                $body = $resp.Content | ConvertFrom-Json
-                Write-Ok "QMT health: status=$($body.status), adapter=$($body.adapter)"
-            } catch {
-                Write-Fail "QMT health 接口无响应: $_"
+            $qmtOk = Wait-HttpHealth `
+                -Name "QMT" `
+                -Url "http://127.0.0.1:9002/health" `
+                -Attempts 5 `
+                -DelaySeconds 3 `
+                -TimeoutSeconds 5
+            if (-not $qmtOk) {
                 Get-Content $qmtTestErr -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
             }
-            $qmtProc.Kill()
-            $qmtProc.WaitForExit(5000)
+            Stop-ProcessTreeBestEffort -Process $qmtProc
         }
     }
 }
@@ -269,7 +236,6 @@ if (-not $Only -or $Only -eq "test") {
 if ((-not $SkipService) -and (-not $Only -or $Only -eq "service")) {
     Write-Step "Step 5/5: 注册 NSSM 服务"
 
-    $venvPython = Join-Path $ProjectDir ".venv\Scripts\python.exe"
     $envFile = Join-Path $ProjectDir ".env"
     if (-not (Test-Path $envFile -PathType Leaf)) {
         Write-Fail ".env 不存在, 无法注册服务"
@@ -287,75 +253,37 @@ if ((-not $SkipService) -and (-not $Only -or $Only -eq "service")) {
     Write-Ok "NSSM: $nssmExe"
 
     # --- TDX 服务 ---
-    $tdxService = "MistTDX"
-    $prevEAP2 = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    $existing = & $nssmExe status $tdxService 2>&1
-    $ErrorActionPreference = $prevEAP2
-    if ($existing -match "SERVICE_RUNNING|SERVICE_STOPPED") {
-        Write-Host "  $tdxService 已存在 (状态: $existing), 跳过注册" -ForegroundColor Yellow
-    } else {
-        & $nssmExe install $tdxService $venvPython "-m uvicorn tdx.main:app --host 127.0.0.1 --port 9001"
-        & $nssmExe set $tdxService AppDirectory $ProjectDir
-        & $nssmExe set $tdxService DisplayName "Mist TDX DataSource"
-        & $nssmExe set $tdxService Description "通达信数据源 HTTP/WS 服务 (port 9001)"
-        & $nssmExe set $tdxService Start SERVICE_AUTO_START
-        & $nssmExe set $tdxService AppStdout (Join-Path $LogsDir "tdx-stdout.log")
-        & $nssmExe set $tdxService AppStderr (Join-Path $LogsDir "tdx-stderr.log")
-        & $nssmExe set $tdxService AppRotateFiles 1
-        & $nssmExe set $tdxService AppRotateBytes 10485760
-        Write-Ok "$tdxService 服务已注册"
-    }
+    $tdxDefinition = New-DatasourceServiceDefinition `
+        -Instance tdx `
+        -ProjectDir $ProjectDir `
+        -LogsDir $LogsDir
+    Ensure-DatasourceNssmService -NssmExe $nssmExe -Definition $tdxDefinition
 
     # --- QMT 服务 ---
-    $qmtService = "MistQMT"
     if (-not $qmtEnabled) {
         Write-Warn "QMT_SDK_PATH 未配置, 跳过 MistQMT 服务注册"
     } else {
-        $prevEAP3 = $ErrorActionPreference
-        $ErrorActionPreference = "Continue"
-        $existing = & $nssmExe status $qmtService 2>&1
-        $ErrorActionPreference = $prevEAP3
-        if ($existing -match "SERVICE_RUNNING|SERVICE_STOPPED") {
-            Write-Host "  $qmtService 已存在 (状态: $existing), 跳过注册" -ForegroundColor Yellow
-        } else {
-            & $nssmExe install $qmtService $venvPython "-m uvicorn qmt.main:app --host 127.0.0.1 --port 9002"
-            & $nssmExe set $qmtService AppDirectory $ProjectDir
-            & $nssmExe set $qmtService DisplayName "Mist QMT DataSource"
-            & $nssmExe set $qmtService Description "QMT 数据源 HTTP/WS 服务 (port 9002)"
-            & $nssmExe set $qmtService Start SERVICE_AUTO_START
-            & $nssmExe set $qmtService AppStdout (Join-Path $LogsDir "qmt-stdout.log")
-            & $nssmExe set $qmtService AppStderr (Join-Path $LogsDir "qmt-stderr.log")
-            & $nssmExe set $qmtService AppRotateFiles 1
-            & $nssmExe set $qmtService AppRotateBytes 10485760
-            Write-Ok "$qmtService 服务已注册"
-        }
+        $qmtDefinition = New-DatasourceServiceDefinition `
+            -Instance qmt `
+            -ProjectDir $ProjectDir `
+            -LogsDir $LogsDir
+        Ensure-DatasourceNssmService -NssmExe $nssmExe -Definition $qmtDefinition
     }
 
     # 启动服务
     Write-Host "`n  启动服务..." -ForegroundColor Cyan
-    & $nssmExe start $tdxService
-    if ($qmtEnabled) { & $nssmExe start $qmtService }
+    Start-DatasourceNssmService -NssmExe $nssmExe -ServiceName $tdxDefinition.ServiceName
+    if ($qmtEnabled) {
+        Start-DatasourceNssmService -NssmExe $nssmExe -ServiceName $qmtDefinition.ServiceName
+    }
 
     Start-Sleep -Seconds 3
 
     # 最终验证
     Write-Host "`n  最终验证:" -ForegroundColor Cyan
-    try {
-        $resp = Invoke-WebRequest -Uri "http://127.0.0.1:9001/health" -TimeoutSec 5 -UseBasicParsing
-        $body = $resp.Content | ConvertFrom-Json
-        Write-Ok "TDX: status=$($body.status), adapter=$($body.adapter)"
-    } catch {
-        Write-Fail "TDX 服务启动失败"
-    }
+    Wait-HttpHealth -Name "TDX" -Url "http://127.0.0.1:9001/health" -Attempts 1 -TimeoutSeconds 5 | Out-Null
     if ($qmtEnabled) {
-        try {
-            $resp = Invoke-WebRequest -Uri "http://127.0.0.1:9002/health" -TimeoutSec 5 -UseBasicParsing
-            $body = $resp.Content | ConvertFrom-Json
-            Write-Ok "QMT: status=$($body.status), adapter=$($body.adapter)"
-        } catch {
-            Write-Fail "QMT 服务启动失败"
-        }
+        Wait-HttpHealth -Name "QMT" -Url "http://127.0.0.1:9002/health" -Attempts 1 -TimeoutSeconds 5 | Out-Null
     } else {
         Write-Warn "QMT 未配置, 已跳过最终验证"
     }
@@ -368,3 +296,4 @@ Write-Host "    nssm status MistTDX / MistQMT          # 查看状态"
 Write-Host "    nssm restart MistTDX / MistQMT          # 重启服务"
 Write-Host "    nssm stop MistTDX / MistQMT             # 停止服务"
 Write-Host "    nssm remove MistTDX / MistQMT           # 删除服务"
+Write-Host "    Remove-Item logs\service-runner-tdx-state.json  # 修复问题后重置 TDX 熔断状态"
