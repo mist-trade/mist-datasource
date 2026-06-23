@@ -66,8 +66,8 @@ $tdxParent = Split-Path $tdxSdk -Parent
 $tdxDll = Join-Path $tdxParent "TPythClient.dll"
 if (-not (Test-Path $tdxDll -PathType Leaf)) {
     Write-Fail "Missing TDX DLL: $tdxDll"
-    Write-Host "  TDX_SDK_PATH should usually point to D:/tdx/PYPlugins/user" -ForegroundColor Yellow
-    Write-Host "  TPythClient.dll should stay in the parent directory D:/tdx/PYPlugins" -ForegroundColor Yellow
+    Write-Host "  TDX_SDK_PATH should point to F:/quant/tdx/PYPlugins/user" -ForegroundColor Yellow
+    Write-Host "  TPythClient.dll should stay in the parent directory F:/quant/tdx/PYPlugins" -ForegroundColor Yellow
     exit 1
 }
 Write-Ok "Found TPythClient.dll in parent directory"

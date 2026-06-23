@@ -6,10 +6,11 @@ The通达信终端 must be running and logged in before using this adapter.
 对应 TDX SDK: tqcenter.tq (通达信官方提供的 tqcenter.py)
 
 部署方式: 将通达信提供的 SDK 文件夹路径设置为 TDX_SDK_PATH 环境变量,
-例如: TDX_SDK_PATH=D:/tdx/PYPlugins/user
+例如: TDX_SDK_PATH=F:/quant/tdx/PYPlugins/user
 SDK 目录结构 (通达信官方原始结构):
-    D:/tdx/PYPlugins/
+    F:/quant/tdx/PYPlugins/
         TPythClient.dll
+        tpythclient.py  # 如果通达信安装提供该文件, 通常在这里
         user/
             tqcenter.py       ← 单文件模块, 包含 tq 类
 代码会自动将 TDX_SDK_PATH 加入 sys.path, 使 from tqcenter import tq 可用.
@@ -127,7 +128,7 @@ class TDXAdapter(MarketDataAdapter):
                 raise ImportError(
                     "TDX_SDK_PATH is not set. "
                     "Please set it to the directory containing tqcenter.py "
-                    "(e.g. TDX_SDK_PATH=D:/tdx/PYPlugins/user)."
+                    "(e.g. TDX_SDK_PATH=F:/quant/tdx/PYPlugins/user)."
                 )
 
             self._tq = _load_tq_module(sdk_path)
@@ -143,7 +144,7 @@ class TDXAdapter(MarketDataAdapter):
             raise ImportError(
                 "tqcenter SDK is not available. "
                 "Please set TDX_SDK_PATH to the directory containing tqcenter.py "
-                "(e.g. TDX_SDK_PATH=D:/tdx/PYPlugins/user). "
+                "(e.g. TDX_SDK_PATH=F:/quant/tdx/PYPlugins/user). "
                 "Use TDXMockAdapter for development on other platforms."
             ) from e
         except Exception as e:

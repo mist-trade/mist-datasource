@@ -6,7 +6,7 @@ The MiniQMT client must be running and logged in before using this adapter.
 对应 QMT SDK: xtquant.xtdata (行情)
 
 部署方式: 将 miniQMT 客户端的 Lib 目录路径设置为 QMT_SDK_PATH 环境变量,
-例如: QMT_SDK_PATH=D:/miniQMT/Lib
+例如: QMT_PATH=F:/quant/qmt, QMT_SDK_PATH=F:/quant/qmt/Lib
 """
 
 import asyncio

@@ -264,25 +264,26 @@ Windows 生产部署不会复制或打包通达信 / miniQMT SDK 文件。服务
 TDX 预期目录结构：
 
 ```text
-D:/tdx/PYPlugins/
+F:/quant/tdx/PYPlugins/
 ├── TPythClient.dll
+├── tpythclient.py        # 如果你的通达信安装提供这个文件，通常在这里
 └── user/
     └── tqcenter.py
 ```
 
-`TDX_SDK_PATH` 必须指向 `user` 目录：
+`TDX_SDK_PATH` 必须指向包含 `tqcenter.py` 的 `user` 目录：
 
 ```env
-TDX_SDK_PATH=D:/tdx/PYPlugins/user
+TDX_SDK_PATH=F:/quant/tdx/PYPlugins/user
 ```
 
-不要只复制 `tqcenter.py` 到部署包。`TPythClient.dll` 由 SDK 内部按父目录关系定位，移动目录后需要同步修改 `.env`，并可能需要在通达信终端里清理旧策略身份。
+不要只复制 `tqcenter.py` 到部署包。`TPythClient.dll` 在 `TDX_SDK_PATH` 的上一级目录，SDK 会按这个父目录关系定位它；移动目录后需要同步修改 `.env`，并可能需要在通达信终端里清理旧策略身份。
 
 QMT 预期配置：
 
 ```env
-QMT_PATH=D:/miniQMT
-QMT_SDK_PATH=D:/miniQMT/Lib
+QMT_PATH=F:/quant/qmt
+QMT_SDK_PATH=
 ```
 
 留空 `QMT_SDK_PATH` 会跳过 QMT 服务注册。

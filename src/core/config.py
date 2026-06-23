@@ -11,7 +11,7 @@ class TDXSettings(BaseSettings):
     )
     host: str = "0.0.0.0"
     port: int = 9001
-    sdk_path: str = ""  # 通达信 SDK 路径, e.g. "D:/tdx_sdk"
+    sdk_path: str = ""  # 通达信 SDK 路径, e.g. "F:/quant/tdx/PYPlugins/user"
 
 
 class QMTSettings(BaseSettings):
@@ -24,7 +24,7 @@ class QMTSettings(BaseSettings):
     port: int = 9002
     path: str = ""
     account_id: str = ""
-    sdk_path: str = ""  # QMT SDK 路径, e.g. "D:/miniQMT/Lib"
+    sdk_path: str = ""  # QMT SDK 路径, e.g. "F:/quant/qmt/Lib"
 
 
 class AKToolsSettings(BaseSettings):
