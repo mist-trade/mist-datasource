@@ -69,10 +69,13 @@ Assert-Match "default QMT path" $windowsEnvExample "QMT_PATH=F:/quant/qmt"
 Assert-Match "TDX comment points SDK path to user directory" $windowsEnvExample "TDX_SDK_PATH points to the user directory that contains tqcenter.py."
 Assert-Match "TDX comment keeps DLL in parent directory" $windowsEnvExample "TPythClient.dll stays one level above TDX_SDK_PATH."
 Assert-Match "default uv python package index" $windowsEnvExample "UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple"
+Assert-Match "default uv python version" $windowsEnvExample "UV_PYTHON=3.12"
 Assert-Match "deploy script checks python launcher" $deployWindows "Get-Command py"
 Assert-Match "deploy script lets uv handle missing python" $deployWindows "uv sync will create/find Python 3.12"
 Assert-Match "deploy script configures uv default index" $deployWindows "--default-index"
 Assert-Match "deploy script defaults to Tsinghua python package index" $deployWindows "https://pypi.tuna.tsinghua.edu.cn/simple"
+Assert-Match "deploy script pins uv sync python" $deployWindows "--python"
+Assert-Match "deploy script defaults to Python 3.12" $deployWindows 'if (-not $uvPython) { $uvPython = "3.12" }'
 Assert-Match "deploy script logs uv sync output" $deployWindows "uv-sync.log"
 Assert-Match "deploy script prints uv sync failure tail" $deployWindows "Recent uv sync output"
 if ($deployWindows -match [regex]::Escape('2>$null | Out-Null')) {

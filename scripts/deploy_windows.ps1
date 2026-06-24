@@ -124,7 +124,12 @@ if (-not $Only -or $Only -eq "install") {
         $uvDefaultIndex = Get-EnvValue $envContent "UV_DEFAULT_INDEX"
         if (-not $uvDefaultIndex) { $uvDefaultIndex = $env:UV_DEFAULT_INDEX }
         if (-not $uvDefaultIndex) { $uvDefaultIndex = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+        $uvPython = Get-EnvValue $envContent "UV_PYTHON"
+        if (-not $uvPython) { $uvPython = $env:UV_PYTHON }
+        if (-not $uvPython) { $uvPython = "3.12" }
+        $syncArgs += @("--python", $uvPython)
         $syncArgs += @("--default-index", $uvDefaultIndex)
+        Write-Ok "uv python: $uvPython"
         Write-Ok "uv default index: $uvDefaultIndex"
         if (-not (Test-Path $LogsDir)) { New-Item -ItemType Directory -Path $LogsDir | Out-Null }
         $uvSyncLog = Join-Path $LogsDir "uv-sync.log"
