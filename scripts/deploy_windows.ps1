@@ -50,10 +50,9 @@ if (-not $Only -or $Only -eq "install") {
     }
 
     # 检查 uv
-    $uvExe = $null
-    try { $uvExe = (Get-Command uv -ErrorAction Stop).Source } catch {}
+    $uvExe = Resolve-UvExe -ProjectDir $ProjectDir
     if (-not $uvExe) {
-        Write-Fail "uv 未安装。运行: powershell -c `"irm https://astral.sh/uv/install.ps1 | iex`""
+        Write-Fail "uv 未安装，且部署包内未找到 runtime\uv.exe。运行: powershell -c `"irm https://astral.sh/uv/install.ps1 | iex`""
         exit 1
     }
     $uvVer = & $uvExe --version 2>&1
@@ -109,10 +108,10 @@ if (-not $Only -or $Only -eq "install") {
     Push-Location $ProjectDir
     try {
         if (-not $uvExe) {
-            try { $uvExe = (Get-Command uv -ErrorAction Stop).Source } catch {}
+            $uvExe = Resolve-UvExe -ProjectDir $ProjectDir
         }
         if (-not $uvExe) {
-            Write-Fail "uv 未安装。运行: powershell -c `"irm https://astral.sh/uv/install.ps1 | iex`""
+            Write-Fail "uv 未安装，且部署包内未找到 runtime\uv.exe。运行: powershell -c `"irm https://astral.sh/uv/install.ps1 | iex`""
             exit 1
         }
 
@@ -121,6 +120,12 @@ if (-not $Only -or $Only -eq "install") {
         # 所有依赖都在主依赖列表中, 不需要 extra 参数
         $lockFile = Join-Path $ProjectDir "uv.lock"
         $syncArgs = if (Test-Path $lockFile -PathType Leaf) { @("sync", "--locked") } else { @("sync") }
+        if (-not $envContent) { $envContent = Get-Content (Join-Path $ProjectDir ".env") -Raw }
+        $uvDefaultIndex = Get-EnvValue $envContent "UV_DEFAULT_INDEX"
+        if (-not $uvDefaultIndex) { $uvDefaultIndex = $env:UV_DEFAULT_INDEX }
+        if (-not $uvDefaultIndex) { $uvDefaultIndex = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+        $syncArgs += @("--default-index", $uvDefaultIndex)
+        Write-Ok "uv default index: $uvDefaultIndex"
         & $uvExe @syncArgs 2>$null | Out-Null
         $syncExit = $LASTEXITCODE
         $ErrorActionPreference = $prevEAP

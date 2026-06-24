@@ -47,6 +47,13 @@ $nssmFile = Join-Path $nssmDir "nssm.exe"
 if (-not (Test-Path $nssmFile -PathType Leaf)) {
     Set-Content -Path $nssmFile -Value "test nssm" -Encoding UTF8
 }
+$uvTestProjectDir = Join-Path $TestRoot "uv-project"
+$uvRuntimeDir = Join-Path $uvTestProjectDir "runtime"
+New-Item -ItemType Directory -Force -Path $uvRuntimeDir | Out-Null
+$uvRuntimeFile = Join-Path $uvRuntimeDir "uv.exe"
+if (-not (Test-Path $uvRuntimeFile -PathType Leaf)) {
+    Set-Content -Path $uvRuntimeFile -Value "test uv" -Encoding UTF8
+}
 
 . "$PSScriptRoot\windows-common.ps1"
 
@@ -61,8 +68,11 @@ Assert-Match "default TDX SDK path" $windowsEnvExample "TDX_SDK_PATH=F:/quant/td
 Assert-Match "default QMT path" $windowsEnvExample "QMT_PATH=F:/quant/qmt"
 Assert-Match "TDX comment points SDK path to user directory" $windowsEnvExample "TDX_SDK_PATH points to the user directory that contains tqcenter.py."
 Assert-Match "TDX comment keeps DLL in parent directory" $windowsEnvExample "TPythClient.dll stays one level above TDX_SDK_PATH."
+Assert-Match "default uv python package index" $windowsEnvExample "UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple"
 Assert-Match "deploy script checks python launcher" $deployWindows "Get-Command py"
 Assert-Match "deploy script lets uv handle missing python" $deployWindows "uv sync will create/find Python 3.12"
+Assert-Match "deploy script configures uv default index" $deployWindows "--default-index"
+Assert-Match "deploy script defaults to Tsinghua python package index" $deployWindows "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 Assert-Equal `
     "blank env returns empty string" `
@@ -73,6 +83,10 @@ Assert-Equal `
     "nssm fallback resolves packaged path" `
     (Resolve-FullPath (Join-Path $ProjectDir "..\nssm\nssm.exe")) `
     (Resolve-NssmExe -ProjectDir $ProjectDir -PreferPathLookup:$false)
+Assert-Equal `
+    "uv fallback resolves packaged runtime" `
+    (Resolve-FullPath (Join-Path $uvTestProjectDir "runtime\uv.exe")) `
+    (Resolve-UvExe -ProjectDir $uvTestProjectDir -PreferPathLookup:$false)
 
 . "$PSScriptRoot\service-common.ps1"
 
@@ -109,5 +123,9 @@ Assert-Equal `
     "crash state clears" `
     0 `
     (Get-CrashCount -StateFile $statePath -Now ([datetime]"2026-06-22T10:03:00Z") -WindowMinutes 10)
+
+if (Test-Path $TestRoot) {
+    Remove-Item $TestRoot -Recurse -Force
+}
 
 Write-Host "`nWindows script tests passed." -ForegroundColor Green

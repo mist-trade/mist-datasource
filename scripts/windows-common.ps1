@@ -50,6 +50,33 @@ function Resolve-NssmExe {
     return $null
 }
 
+function Resolve-UvExe {
+    param(
+        [string]$ProjectDir,
+        [bool]$PreferPathLookup = $true
+    )
+
+    if (-not $ProjectDir) {
+        $ProjectDir = $PSScriptRoot | Split-Path -Parent
+    }
+
+    if ($PreferPathLookup) {
+        $cmd = Get-Command uv -ErrorAction SilentlyContinue
+        if ($cmd) { return $cmd.Source }
+    }
+
+    $candidates = @(
+        (Join-Path $ProjectDir "runtime\uv.exe"),
+        (Join-Path $ProjectDir "..\runtime\uv.exe")
+    )
+    foreach ($candidate in $candidates) {
+        $resolved = Resolve-FullPath $candidate
+        if (Test-Path $resolved -PathType Leaf) { return $resolved }
+    }
+
+    return $null
+}
+
 function Wait-HttpHealth {
     param(
         [string]$Name,
