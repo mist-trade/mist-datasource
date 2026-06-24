@@ -126,10 +126,22 @@ if (-not $Only -or $Only -eq "install") {
         if (-not $uvDefaultIndex) { $uvDefaultIndex = "https://pypi.tuna.tsinghua.edu.cn/simple" }
         $syncArgs += @("--default-index", $uvDefaultIndex)
         Write-Ok "uv default index: $uvDefaultIndex"
-        & $uvExe @syncArgs 2>$null | Out-Null
-        $syncExit = $LASTEXITCODE
-        $ErrorActionPreference = $prevEAP
-        if ($syncExit -ne 0) { throw "uv sync failed (exit code $syncExit)" }
+        if (-not (Test-Path $LogsDir)) { New-Item -ItemType Directory -Path $LogsDir | Out-Null }
+        $uvSyncLog = Join-Path $LogsDir "uv-sync.log"
+        Write-Host "  uv sync log: $uvSyncLog"
+        try {
+            & $uvExe @syncArgs *> $uvSyncLog
+            $syncExit = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $prevEAP
+        }
+        if ($syncExit -ne 0) {
+            Write-Fail "uv sync failed (exit code $syncExit)"
+            Write-Host "`n===== Recent uv sync output =====" -ForegroundColor Yellow
+            Get-Content $uvSyncLog -Tail 80 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
+            exit $syncExit
+        }
         Write-Ok "uv sync 完成"
 
         # 检查 venv 是否创建

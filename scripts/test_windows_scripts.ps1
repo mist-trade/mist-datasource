@@ -73,6 +73,12 @@ Assert-Match "deploy script checks python launcher" $deployWindows "Get-Command 
 Assert-Match "deploy script lets uv handle missing python" $deployWindows "uv sync will create/find Python 3.12"
 Assert-Match "deploy script configures uv default index" $deployWindows "--default-index"
 Assert-Match "deploy script defaults to Tsinghua python package index" $deployWindows "https://pypi.tuna.tsinghua.edu.cn/simple"
+Assert-Match "deploy script logs uv sync output" $deployWindows "uv-sync.log"
+Assert-Match "deploy script prints uv sync failure tail" $deployWindows "Recent uv sync output"
+if ($deployWindows -match [regex]::Escape('2>$null | Out-Null')) {
+    throw "deploy script must not hide uv sync stderr/stdout."
+}
+Write-Host "  [PASS] deploy script keeps uv sync output visible" -ForegroundColor Green
 
 Assert-Equal `
     "blank env returns empty string" `
