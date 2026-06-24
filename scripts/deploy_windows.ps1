@@ -119,7 +119,7 @@ if (-not $Only -or $Only -eq "install") {
         $ErrorActionPreference = "Continue"
         # 所有依赖都在主依赖列表中, 不需要 extra 参数
         $lockFile = Join-Path $ProjectDir "uv.lock"
-        $syncArgs = if (Test-Path $lockFile -PathType Leaf) { @("sync", "--locked") } else { @("sync") }
+        $syncArgs = if (Test-Path $lockFile -PathType Leaf) { @("sync", "--frozen") } else { @("sync") }
         if (-not $envContent) { $envContent = Get-Content (Join-Path $ProjectDir ".env") -Raw }
         $uvDefaultIndex = Get-EnvValue $envContent "UV_DEFAULT_INDEX"
         if (-not $uvDefaultIndex) { $uvDefaultIndex = $env:UV_DEFAULT_INDEX }

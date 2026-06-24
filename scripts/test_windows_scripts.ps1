@@ -76,6 +76,11 @@ Assert-Match "deploy script configures uv default index" $deployWindows "--defau
 Assert-Match "deploy script defaults to Tsinghua python package index" $deployWindows "https://pypi.tuna.tsinghua.edu.cn/simple"
 Assert-Match "deploy script pins uv sync python" $deployWindows "--python"
 Assert-Match "deploy script defaults to Python 3.12" $deployWindows 'if (-not $uvPython) { $uvPython = "3.12" }'
+Assert-Match "deploy script syncs from frozen lockfile" $deployWindows "--frozen"
+if ($deployWindows -match [regex]::Escape('--locked')) {
+    throw "deploy script must use --frozen, not --locked, during appliance installs."
+}
+Write-Host "  [PASS] deploy script avoids lockfile freshness checks" -ForegroundColor Green
 Assert-Match "deploy script logs uv sync output" $deployWindows "uv-sync.log"
 Assert-Match "deploy script prints uv sync failure tail" $deployWindows "Recent uv sync output"
 if ($deployWindows -match [regex]::Escape('2>$null | Out-Null')) {
