@@ -40,11 +40,14 @@ if (-not $Only -or $Only -eq "install") {
         try { $pythonExe = (Get-Command python3 -ErrorAction Stop).Source } catch {}
     }
     if (-not $pythonExe) {
-        Write-Fail "Python 未安装。请安装 Python 3.12+ 并加入 PATH"
-        exit 1
+        try { $pythonExe = (Get-Command py -ErrorAction Stop).Source } catch {}
     }
-    $pyVer = & $pythonExe --version 2>&1
-    Write-Ok "Python: $pyVer ($pythonExe)"
+    if ($pythonExe) {
+        $pyVer = & $pythonExe --version 2>&1
+        Write-Ok "Python: $pyVer ($pythonExe)"
+    } else {
+        Write-Warn "Python is not on PATH; uv sync will create/find Python 3.12"
+    }
 
     # 检查 uv
     $uvExe = $null
@@ -105,12 +108,20 @@ if (-not $Only -or $Only -eq "install") {
 
     Push-Location $ProjectDir
     try {
+        if (-not $uvExe) {
+            try { $uvExe = (Get-Command uv -ErrorAction Stop).Source } catch {}
+        }
+        if (-not $uvExe) {
+            Write-Fail "uv 未安装。运行: powershell -c `"irm https://astral.sh/uv/install.ps1 | iex`""
+            exit 1
+        }
+
         $prevEAP = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
         # 所有依赖都在主依赖列表中, 不需要 extra 参数
         $lockFile = Join-Path $ProjectDir "uv.lock"
         $syncArgs = if (Test-Path $lockFile -PathType Leaf) { @("sync", "--locked") } else { @("sync") }
-        & uv @syncArgs 2>$null | Out-Null
+        & $uvExe @syncArgs 2>$null | Out-Null
         $syncExit = $LASTEXITCODE
         $ErrorActionPreference = $prevEAP
         if ($syncExit -ne 0) { throw "uv sync failed (exit code $syncExit)" }

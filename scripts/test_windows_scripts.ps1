@@ -56,10 +56,13 @@ Assert-Equal `
     (Get-EnvValue "TDX_SDK_PATH=`"F:/quant/tdx/PYPlugins/user`"" "TDX_SDK_PATH")
 
 $windowsEnvExample = Get-Content (Join-Path $ProjectDir ".env.windows.example") -Raw
+$deployWindows = Get-Content (Join-Path $ProjectDir "scripts\deploy_windows.ps1") -Raw
 Assert-Match "default TDX SDK path" $windowsEnvExample "TDX_SDK_PATH=F:/quant/tdx/PYPlugins/user"
 Assert-Match "default QMT path" $windowsEnvExample "QMT_PATH=F:/quant/qmt"
 Assert-Match "TDX comment points SDK path to user directory" $windowsEnvExample "TDX_SDK_PATH points to the user directory that contains tqcenter.py."
 Assert-Match "TDX comment keeps DLL in parent directory" $windowsEnvExample "TPythClient.dll stays one level above TDX_SDK_PATH."
+Assert-Match "deploy script checks python launcher" $deployWindows "Get-Command py"
+Assert-Match "deploy script lets uv handle missing python" $deployWindows "uv sync will create/find Python 3.12"
 
 Assert-Equal `
     "blank env returns empty string" `
