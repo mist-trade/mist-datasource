@@ -74,7 +74,25 @@ function Test-NssmServiceExists {
     )
 
     $result = Invoke-Nssm -NssmExe $NssmExe -Arguments @("status", $ServiceName) -AllowFailure
-    return ($result.ExitCode -eq 0 -and $result.Output -match "SERVICE_")
+    if ($result.ExitCode -eq 0 -and $result.Output -match "SERVICE_") {
+        return $true
+    }
+
+    $scCommand = Get-Command sc.exe -ErrorAction SilentlyContinue
+    if (-not $scCommand) {
+        return $false
+    }
+
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = & $scCommand.Source query $ServiceName 2>&1
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
+
+    return ($exitCode -eq 0 -and "$output" -match "SERVICE_NAME")
 }
 
 function Get-NssmValue {
@@ -142,6 +160,22 @@ function Set-NssmValue {
     Invoke-Nssm -NssmExe $NssmExe -Arguments (@("set", $ServiceName, $Name) + $Value) | Out-Null
 }
 
+function Remove-DatasourceNssmService {
+    param(
+        [string]$NssmExe,
+        [string]$ServiceName
+    )
+
+    $status = Invoke-Nssm -NssmExe $NssmExe -Arguments @("status", $ServiceName) -AllowFailure
+    $stop = Invoke-Nssm -NssmExe $NssmExe -Arguments @("stop", $ServiceName) -AllowFailure
+    if (($stop.ExitCode -ne 0) -and ($status.Output -match "SERVICE_RUNNING")) {
+        Write-Warn "$ServiceName stop returned exit code $($stop.ExitCode); attempting removal anyway"
+    }
+
+    Invoke-Nssm -NssmExe $NssmExe -Arguments @("remove", $ServiceName, "confirm") | Out-Null
+    Write-Ok "$ServiceName old service removed"
+}
+
 function Ensure-DatasourceNssmService {
     param(
         [string]$NssmExe,
@@ -149,19 +183,22 @@ function Ensure-DatasourceNssmService {
     )
 
     $serviceName = $Definition.ServiceName
-    if (-not (Test-NssmServiceExists -NssmExe $NssmExe -ServiceName $serviceName)) {
-        Invoke-Nssm `
+    if (Test-NssmServiceExists -NssmExe $NssmExe -ServiceName $serviceName) {
+        if (-not (Test-DatasourceServiceOwnedByProject `
             -NssmExe $NssmExe `
-            -Arguments @("install", $serviceName, $Definition.Application, $Definition.Parameters) `
-            | Out-Null
-    } elseif (-not (Test-DatasourceServiceOwnedByProject `
-        -NssmExe $NssmExe `
-        -ServiceName $serviceName `
-        -ProjectDir $Definition.AppDirectory)) {
-        throw "$serviceName already exists but does not look like a Mist datasource service. Remove or rename it before installing."
-    } else {
-        Write-Warn "$serviceName already exists; updating configuration"
+            -ServiceName $serviceName `
+            -ProjectDir $Definition.AppDirectory)) {
+            Write-Warn "$serviceName already exists but ownership could not be confirmed; removing because Mist datasource owns this service name"
+        } else {
+            Write-Warn "$serviceName already exists; removing stale service before reinstall"
+        }
+        Remove-DatasourceNssmService -NssmExe $NssmExe -ServiceName $serviceName
     }
+
+    Invoke-Nssm `
+        -NssmExe $NssmExe `
+        -Arguments @("install", $serviceName, $Definition.Application, $Definition.Parameters) `
+        | Out-Null
 
     Set-NssmValue -NssmExe $NssmExe -ServiceName $serviceName -Name "Application" -Value $Definition.Application
     Set-NssmValue -NssmExe $NssmExe -ServiceName $serviceName -Name "AppParameters" -Value $Definition.Parameters

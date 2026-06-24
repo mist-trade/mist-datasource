@@ -64,6 +64,7 @@ Assert-Equal `
 
 $windowsEnvExample = Get-Content (Join-Path $ProjectDir ".env.windows.example") -Raw
 $deployWindows = Get-Content (Join-Path $ProjectDir "scripts\deploy_windows.ps1") -Raw
+$serviceCommon = Get-Content (Join-Path $ProjectDir "scripts\service-common.ps1") -Raw
 Assert-Match "default TDX SDK path" $windowsEnvExample "TDX_SDK_PATH=F:/quant/tdx/PYPlugins/user"
 Assert-Match "default QMT path" $windowsEnvExample "QMT_PATH=F:/quant/qmt"
 Assert-Match "TDX comment points SDK path to user directory" $windowsEnvExample "TDX_SDK_PATH points to the user directory that contains tqcenter.py."
@@ -87,6 +88,10 @@ if ($deployWindows -match [regex]::Escape('2>$null | Out-Null')) {
     throw "deploy script must not hide uv sync stderr/stdout."
 }
 Write-Host "  [PASS] deploy script keeps uv sync output visible" -ForegroundColor Green
+Assert-Match "datasource service existence uses sc fallback" $serviceCommon "sc.exe"
+Assert-Match "datasource service stops existing service before reinstall" $serviceCommon '"stop", $ServiceName'
+Assert-Match "datasource service removes existing service before reinstall" $serviceCommon '"remove", $ServiceName, "confirm"'
+Assert-Match "datasource service reinstalls after removal" $serviceCommon '"install", $serviceName, $Definition.Application, $Definition.Parameters'
 
 Assert-Equal `
     "blank env returns empty string" `
@@ -116,6 +121,53 @@ Assert-Equal `
     "tdx stdout log" `
     (Join-Path $ProjectDir "logs\tdx-stdout.log") `
     $tdxDefinition.Stdout
+
+$script:nssmCalls = @()
+function Invoke-Nssm {
+    param(
+        [string]$NssmExe,
+        [string[]]$Arguments,
+        [switch]$AllowFailure
+    )
+
+    $script:nssmCalls += ,($Arguments -join "|")
+    $command = $Arguments[0]
+    $name = if ($Arguments.Count -gt 2) { $Arguments[2] } else { "" }
+
+    if ($command -eq "status") {
+        return @{ ExitCode = 0; Output = "SERVICE_STOPPED" }
+    }
+    if (($command -eq "get") -and ($name -eq "AppDirectory")) {
+        return @{ ExitCode = 0; Output = $ProjectDir }
+    }
+    if ($command -eq "get") {
+        return @{ ExitCode = 0; Output = "" }
+    }
+    return @{ ExitCode = 0; Output = "" }
+}
+
+function Find-CallIndex {
+    param(
+        [string[]]$Calls,
+        [string]$Pattern
+    )
+
+    for ($i = 0; $i -lt $Calls.Count; $i++) {
+        if ($Calls[$i] -match [regex]::Escape($Pattern)) {
+            return $i
+        }
+    }
+    return -1
+}
+
+Ensure-DatasourceNssmService -NssmExe $nssmFile -Definition $tdxDefinition
+$stopIndex = Find-CallIndex -Calls $script:nssmCalls -Pattern "stop|MistTDX"
+$removeIndex = Find-CallIndex -Calls $script:nssmCalls -Pattern "remove|MistTDX|confirm"
+$installIndex = Find-CallIndex -Calls $script:nssmCalls -Pattern "install|MistTDX|powershell.exe"
+if (-not (($stopIndex -ge 0) -and ($removeIndex -gt $stopIndex) -and ($installIndex -gt $removeIndex))) {
+    throw "datasource service reinstall order failed. Calls: $($script:nssmCalls -join ', ')"
+}
+Write-Host "  [PASS] datasource service reinstall order" -ForegroundColor Green
 
 . "$PSScriptRoot\service-runner.ps1" -LoadOnly
 
