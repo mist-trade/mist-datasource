@@ -65,6 +65,7 @@ Assert-Equal `
 $windowsEnvExample = Get-Content (Join-Path $ProjectDir ".env.windows.example") -Raw
 $deployWindows = Get-Content (Join-Path $ProjectDir "scripts\deploy_windows.ps1") -Raw
 $serviceCommon = Get-Content (Join-Path $ProjectDir "scripts\service-common.ps1") -Raw
+$tdxWinswInstall = Get-Content (Join-Path $ProjectDir "scripts\winsw\install-tdx-datasource.ps1") -Raw
 Assert-Match "default TDX SDK path" $windowsEnvExample "TDX_SDK_PATH=F:/quant/tdx/PYPlugins/user"
 Assert-Match "default QMT path" $windowsEnvExample "QMT_PATH=F:/quant/qmt"
 Assert-Match "TDX comment points SDK path to user directory" $windowsEnvExample "TDX_SDK_PATH points to the user directory that contains tqcenter.py."
@@ -95,6 +96,8 @@ Assert-Match "datasource service existence uses sc fallback" $serviceCommon "sc.
 Assert-Match "datasource service stops existing service before reinstall" $serviceCommon '"stop", $ServiceName'
 Assert-Match "datasource service removes existing service before reinstall" $serviceCommon '"remove", $ServiceName, "confirm"'
 Assert-Match "datasource service reinstalls after removal" $serviceCommon '"install", $serviceName, $Definition.Application, $Definition.Parameters'
+Assert-Match "TDX WinSW installer accepts started-successfully output" $tdxWinswInstall "started successfully"
+Assert-Match "TDX WinSW installer clears native exit code after success" $tdxWinswInstall '$global:LASTEXITCODE = 0'
 
 Assert-Equal `
     "blank env returns empty string" `
