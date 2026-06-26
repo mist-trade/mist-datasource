@@ -1,12 +1,12 @@
 """TDX 实时行情 WebSocket 路由.
 
 为 NestJS 后端提供实时行情推送的 WebSocket 接口.
-对应 TDX SDK: tqcenter.tq (subscribe_hq, unsubscribe_hq, get_market_snapshot)
+对应 TDX SDK: tqcenter.tq (subscribe_hq, unsubscribe_hq)
 
-使用 TDX 原生订阅模式:
-    1. subscribe_hq(stock_list, callback) - 注册回调，股票数据变化时触发
-    2. 回调中调用 get_market_snapshot(code) - 拉取完整数据
-    3. 通过 WebSocket 广播 - 推送给客户端
+使用 TDX 订阅客户端 + 分钟线采集模式:
+    1. TdxSubscriptionClient 包装 subscribe_hq/unsubscribe_hq
+    2. SDK 回调只标记 collector dirty symbols
+    3. collector 拉取分钟线后广播 normalized bar 事件
 
 消息协议:
     客户端发送:
@@ -26,45 +26,86 @@
     - 超过限制会返回错误
 """
 
-import asyncio
 import json
+from contextlib import suppress
+from json import JSONDecodeError
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-import tdx.main
-from src.ws.protocol import WSMessage
+from src.core.config import settings
+from src.datasource.tdx_bridge import TdxBridge
 
 router = APIRouter()
 
-# TDX 订阅限制：最多100只股票
-TDX_MAX_SUBSCRIPTION = 100
 
-
-def _get_adapter():
-    """获取 TDX 适配器实例.
-
-    延迟导入避免循环依赖.
-    """
+def _get_ws_manager():
     import tdx.main as tdx_main
-    return tdx_main.tdx_adapter
+
+    return tdx_main.ws_manager
+
+
+def _get_subscription_client():
+    import tdx.main as tdx_main
+
+    return tdx_main.tdx_subscription_client
+
+
+def _get_bridge() -> TdxBridge:
+    import tdx.main as tdx_main
+
+    if tdx_main.tdx_bridge is None:
+        tdx_main.tdx_bridge = TdxBridge(
+            queue_max_size=settings.tdx.ws_queue_max_size,
+            max_subscriptions=settings.tdx.max_subscriptions,
+        )
+    return tdx_main.tdx_bridge
+
+
+def _message_symbols(message: dict[str, Any]) -> list[str] | None:
+    symbols = message.get("symbols", message.get("stocks", []))
+    if not isinstance(symbols, list) or not all(
+        isinstance(symbol, str) for symbol in symbols
+    ):
+        return None
+    return symbols
+
+
+def _is_leader(bridge: TdxBridge, client_id: str) -> bool:
+    return bridge.leader_client_id == client_id or bridge.claim_leader(client_id)
+
+
+def _subscription_response(
+    msg_type: str,
+    accepted: list[str],
+    rejected: list[str],
+    active: list[str],
+) -> dict[str, Any]:
+    return {
+        "type": msg_type,
+        "provider": "tdx",
+        "stocks": accepted,
+        "data": {
+            "accepted": accepted,
+            "rejected": rejected,
+            "active": active,
+        },
+    }
 
 
 @router.websocket("/quote/{client_id}")
 async def websocket_quote(websocket: WebSocket, client_id: str):
     """实时行情 WebSocket 端点 (TDX 原生模式).
 
-    使用 TDX 的 subscribe_hq + get_market_snapshot 模式:
+    使用 TDXSubscriptionClient + TdxMinuteCollector 模式:
     1. 客户端发送订阅请求
     2. 验证股票数量不超过100只 (TDX SDK限制)
-    3. 调用 adapter.subscribe_hq(stocks, callback) 注册回调
-    4. 回调触发时，通过 asyncio.Queue 桥接到异步
-    5. 异步任务调用 get_market_snapshot(code) 拉取数据
-    6. 通过 WebSocket 广播数据
+    3. 调用 subscription client 注册轻量回调
+    4. 回调只标记 dirty symbol
+    5. collector 拉取分钟线并广播 normalized bar
 
     对应 TDX SDK:
         - tq.subscribe_hq(stock_list, callback) - 注册订阅回调
-        - tq.get_market_snapshot(stock_code, field_list) - 拉取行情快照
         - tq.unsubscribe_hq(stock_list) - 取消订阅
 
     Args:
@@ -76,82 +117,60 @@ async def websocket_quote(websocket: WebSocket, client_id: str):
         心跳: {"type": "ping"}
         订阅: {"type": "subscribe", "stocks": ["600519.SH", "000001.SZ"]}
     """
-    await tdx.main.ws_manager.connect(websocket, client_id)
-
-    adapter = _get_adapter()
-    if not adapter:
-        await websocket.send_text(json.dumps({
-            "type": "error",
-            "message": "Adapter not initialized"
-        }))
+    ws_manager = _get_ws_manager()
+    bridge = _get_bridge()
+    if not await ws_manager.connect_unique(websocket, client_id):
+        await websocket.accept()
+        await websocket.send_text(
+            json.dumps(
+                bridge.make_error_message(
+                    "DATASOURCE_WS_DUPLICATE_CLIENT",
+                    "A WebSocket client with this client_id is already connected",
+                    False,
+                    {"clientId": client_id},
+                )
+            )
+        )
         await websocket.close()
         return
 
-    # 用于桥接同步回调到异步的队列
-    quote_queue: asyncio.Queue[str] = asyncio.Queue()
+    bridge.claim_leader(client_id)
+    await websocket.send_text(json.dumps(bridge.make_ready_message()))
 
-    # 订阅的股票集合
-    subscribed_stocks: set[str] = set()
-
-    # TDX SDK 回调函数 (在 SDK 线程中同步调用)
-    def on_quote_update(data: dict[str, Any]) -> None:
-        """TDX SDK 行情回调.
-
-        当订阅的股票数据变化时，TDX SDK 会调用此函数.
-        将股票代码放入队列，由异步任务处理.
-
-        Args:
-            data: SDK 回调数据，格式如 {"Code": "600519.SH", "ErrorId": "0"}
-        """
-        stock_code = data.get("Code", "")
-        if stock_code:
-            try:
-                # 使用 call_soon_threadsafe 将数据放入异步队列
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.call_soon_threadsafe(quote_queue.put_nowait, stock_code)
-            except Exception:
-                pass
-
-    # 异步消费者任务：处理队列中的股票代码，拉取完整数据
-    async def quote_consumer():
-        """从队列获取股票代码，拉取行情数据并广播."""
-        while True:
-            try:
-                stock_code = await quote_queue.get()
-                if stock_code is None:  # 退出信号
-                    break
-
-                # 拉取完整行情快照
-                snapshot = await adapter.get_market_snapshot(stock_code, [])
-
-                # 构造消息并广播
-                quote_msg = WSMessage(
-                    type="quote",
-                    data={
-                        "stock_code": stock_code,
-                        "snapshot": snapshot
-                    }
+    subscription_client = _get_subscription_client()
+    if not subscription_client:
+        await websocket.send_text(
+            json.dumps(
+                bridge.make_error_message(
+                    "TDX_SUBSCRIPTION_CLIENT_UNAVAILABLE",
+                    "Subscription client not initialized",
+                    True,
+                    {},
                 )
-
-                # 发送给当前连接
-                try:
-                    await websocket.send_text(quote_msg.to_json())
-                except Exception:
-                    break
-
-                quote_queue.task_done()
-
-            except Exception:
-                pass
-
-    # 启动消费者任务
-    consumer_task = asyncio.create_task(quote_consumer())
+            )
+        )
+        await websocket.close()
+        bridge.disconnect(client_id)
+        await ws_manager.disconnect(client_id)
+        return
 
     try:
         while True:
             data = await websocket.receive_text()
-            message = json.loads(data)
+            try:
+                message = json.loads(data)
+            except JSONDecodeError as e:
+                await websocket.send_text(
+                    json.dumps(
+                        bridge.make_error_message(
+                            "DATASOURCE_WS_INVALID_MESSAGE",
+                            "WebSocket message must be valid JSON",
+                            False,
+                            {"error": str(e)},
+                        )
+                    )
+                )
+                continue
 
             msg_type = message.get("type")
 
@@ -159,49 +178,83 @@ async def websocket_quote(websocket: WebSocket, client_id: str):
                 # 心跳响应
                 await websocket.send_text(json.dumps({"type": "pong"}))
 
-            elif msg_type == "subscribe":
-                # 订阅股票
-                stocks = message.get("stocks", [])
-
-                # 验证股票数量
-                if len(stocks) > TDX_MAX_SUBSCRIPTION:
-                    await websocket.send_text(json.dumps({
-                        "type": "error",
-                        "message": f"Cannot subscribe to more than {TDX_MAX_SUBSCRIPTION} stocks"
-                    }))
+            elif msg_type in {"sync_subscriptions", "subscribe", "unsubscribe"}:
+                if not _is_leader(bridge, client_id):
+                    await websocket.send_text(
+                        json.dumps(
+                            bridge.make_error_message(
+                                "DATASOURCE_WS_NOT_LEADER",
+                                "Only the command leader can change TDX subscriptions",
+                                False,
+                                {"leaderClientId": bridge.leader_client_id},
+                            )
+                        )
+                    )
                     continue
 
-                # 调用 TDX SDK 订阅
-                try:
-                    await adapter.subscribe_hq(stocks, on_quote_update)
-                    subscribed_stocks.update(stocks)
-                    await websocket.send_text(json.dumps({
-                        "type": "subscribed",
-                        "stocks": stocks,
-                        "message": f"Subscribed to {len(stocks)} stocks"
-                    }))
-                except Exception as e:
-                    await websocket.send_text(json.dumps({
-                        "type": "error",
-                        "message": f"Subscription failed: {str(e)}"
-                    }))
+                symbols = _message_symbols(message)
+                if symbols is None:
+                    await websocket.send_text(
+                        json.dumps(
+                            bridge.make_error_message(
+                                "DATASOURCE_WS_INVALID_SYMBOLS",
+                                "WebSocket symbols must be a list of strings",
+                                False,
+                                {"operation": msg_type},
+                            )
+                        )
+                    )
+                    continue
 
-            elif msg_type == "unsubscribe":
-                # 取消订阅
-                stocks = message.get("stocks", [])
                 try:
-                    await adapter.unsubscribe_hq(stocks)
-                    for stock in stocks:
-                        subscribed_stocks.discard(stock)
-                    await websocket.send_text(json.dumps({
-                        "type": "unsubscribed",
-                        "stocks": stocks
-                    }))
+                    if msg_type == "sync_subscriptions":
+                        result = await subscription_client.sync(symbols)
+                    elif msg_type == "subscribe":
+                        result = await subscription_client.subscribe(symbols)
+                    else:
+                        result = await subscription_client.unsubscribe(symbols)
+
+                    error = result.get("error")
+                    if error:
+                        await websocket.send_text(
+                            json.dumps(
+                                bridge.make_error_message(
+                                    error["code"],
+                                    error["message"],
+                                    bool(error.get("retryable", False)),
+                                    error.get(
+                                        "details",
+                                        {"maxSubscriptions": settings.tdx.max_subscriptions},
+                                    ),
+                                )
+                            )
+                        )
+                        continue
+
+                    response_type = (
+                        "unsubscribed" if msg_type == "unsubscribe" else "subscribed"
+                    )
+                    await websocket.send_text(
+                        json.dumps(
+                            _subscription_response(
+                                response_type,
+                                list(result.get("accepted", symbols)),
+                                list(result.get("rejected", [])),
+                                list(result.get("active", bridge.active_subscriptions)),
+                            )
+                        )
+                    )
                 except Exception as e:
-                    await websocket.send_text(json.dumps({
-                        "type": "error",
-                        "message": f"Unsubscription failed: {str(e)}"
-                    }))
+                    await websocket.send_text(
+                        json.dumps(
+                            bridge.make_error_message(
+                                "TDX_SUBSCRIPTION_FAILED",
+                                f"Subscription change failed: {str(e)}",
+                                True,
+                                {"operation": msg_type},
+                            )
+                        )
+                    )
 
             elif msg_type == "error":
                 # 客户端错误
@@ -210,27 +263,22 @@ async def websocket_quote(websocket: WebSocket, client_id: str):
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        try:
-            await websocket.send_text(json.dumps({
-                "type": "error",
-                "message": str(e)
-            }))
-        except Exception:
-            pass
+        with suppress(Exception):
+            await websocket.send_text(
+                json.dumps(
+                    bridge.make_error_message(
+                        "TDX_WS_INTERNAL_ERROR",
+                        str(e),
+                        True,
+                        {},
+                    )
+                )
+            )
 
     finally:
-        # 清理：取消所有订阅
-        if subscribed_stocks and adapter:
-            try:
-                await adapter.unsubscribe_hq(list(subscribed_stocks))
-            except Exception:
-                pass
+        if bridge.leader_client_id == client_id and bridge.active_subscriptions:
+            with suppress(Exception):
+                await subscription_client.unsubscribe(list(bridge.active_subscriptions))
 
-        # 停止消费者任务
-        quote_queue.put_nowait(None)
-        try:
-            await asyncio.wait_for(consumer_task, timeout=1.0)
-        except TimeoutError:
-            pass
-
-        await tdx.main.ws_manager.disconnect(client_id)
+        bridge.disconnect(client_id)
+        await ws_manager.disconnect(client_id)

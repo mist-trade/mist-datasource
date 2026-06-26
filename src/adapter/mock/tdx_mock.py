@@ -1,3 +1,4 @@
+# ruff: noqa: ARG002
 """Mock TDX adapter for macOS development with fixed deterministic data."""
 
 import asyncio
@@ -16,6 +17,7 @@ class TDXMockAdapter(MarketDataAdapter):
     def __init__(self) -> None:
         self._fixtures_dir = Path(__file__).parent.parent.parent.parent / "tests" / "fixtures" / "tdx"
         self._subscribed_stocks: set[str] = set()
+        self._hq_callback: Any | None = None
         self._load_fixtures()
 
     def _load_fixtures(self) -> None:
@@ -41,6 +43,7 @@ class TDXMockAdapter(MarketDataAdapter):
     async def shutdown(self) -> None:
         """Shutdown mock adapter."""
         self._subscribed_stocks.clear()
+        self._hq_callback = None
 
     # ---- Required Abstract Methods ----
 
@@ -429,11 +432,23 @@ class TDXMockAdapter(MarketDataAdapter):
     async def subscribe_hq(self, stock_list: list[str], callback: Any = None) -> None:
         """订阅行情."""
         self._subscribed_stocks.update(stock_list)
+        self._hq_callback = callback
 
-    async def unsubscribe_hq(self, stock_list: list[str]) -> None:
+    async def unsubscribe_hq(self, stock_list: list[str] | None = None) -> None:
         """取消订阅行情."""
+        if stock_list is None:
+            self._subscribed_stocks.clear()
+            self._hq_callback = None
+            return
         for code in stock_list:
             self._subscribed_stocks.discard(code)
+        if not self._subscribed_stocks:
+            self._hq_callback = None
+
+    async def emit_hq_update(self, stock_code: str) -> None:
+        """Deterministically emit a stored quote callback for tests."""
+        if self._hq_callback:
+            self._hq_callback({"Code": stock_code, "ErrorId": "0"})
 
     async def get_subscribe_list(self) -> list[str]:
         """获取订阅列表."""

@@ -78,6 +78,9 @@ Assert-Match "deploy script defaults to Tsinghua python package index" $deployWi
 Assert-Match "deploy script pins uv sync python" $deployWindows "--python"
 Assert-Match "deploy script defaults to Python 3.12" $deployWindows 'if (-not $uvPython) { $uvPython = "3.12" }'
 Assert-Match "deploy script syncs from frozen lockfile" $deployWindows "--frozen"
+Assert-Match "deploy script exposes service instance selector" $deployWindows '[ValidateSet("all", "tdx", "qmt")]'
+Assert-Match "deploy script can install only QMT service" $deployWindows "-ServiceInstance qmt"
+Assert-Match "deploy script skips legacy MistTDX when service instance is qmt" $deployWindows '$installTdxService = $ServiceInstance -in @("all", "tdx")'
 if ($deployWindows -match [regex]::Escape('--locked')) {
     throw "deploy script must use --frozen, not --locked, during appliance installs."
 }

@@ -28,6 +28,15 @@ class ConnectionManager:
         async with self._lock:
             self._connections[client_id] = websocket
 
+    async def connect_unique(self, websocket: WebSocket, client_id: str) -> bool:
+        """Accept and register a connection only when client_id is unused."""
+        async with self._lock:
+            if client_id in self._connections:
+                return False
+            await websocket.accept()
+            self._connections[client_id] = websocket
+            return True
+
     async def disconnect(self, client_id: str) -> None:
         """Remove a WebSocket connection.
 

@@ -77,6 +77,51 @@ function Resolve-UvExe {
     return $null
 }
 
+function Resolve-WinSWExe {
+    param(
+        [string]$ProjectDir,
+        [string]$WinSWExe = "",
+        [bool]$PreferPathLookup = $true
+    )
+
+    if (-not $ProjectDir) {
+        $ProjectDir = $PSScriptRoot | Split-Path -Parent
+    }
+
+    if ($WinSWExe) {
+        $resolved = Resolve-FullPath $WinSWExe
+        if (Test-Path $resolved -PathType Leaf) { return $resolved }
+        return $null
+    }
+
+    if ($PreferPathLookup) {
+        foreach ($name in @("winsw", "WinSW", "winsw-x64", "WinSW-x64")) {
+            $cmd = Get-Command $name -ErrorAction SilentlyContinue
+            if ($cmd) { return $cmd.Source }
+        }
+    }
+
+    $candidates = @(
+        (Join-Path $ProjectDir "winsw\winsw.exe"),
+        (Join-Path $ProjectDir "winsw\WinSW.exe"),
+        (Join-Path $ProjectDir "tools\winsw\winsw.exe"),
+        (Join-Path $ProjectDir "runtime\winsw.exe"),
+        (Join-Path $ProjectDir "..\winsw\winsw.exe")
+    )
+    foreach ($candidate in $candidates) {
+        $resolved = Resolve-FullPath $candidate
+        if (Test-Path $resolved -PathType Leaf) { return $resolved }
+    }
+
+    return $null
+}
+
+function ConvertTo-XmlEscapedValue {
+    param([AllowNull()][object]$Value)
+
+    return [System.Security.SecurityElement]::Escape([string]$Value)
+}
+
 function Wait-HttpHealth {
     param(
         [string]$Name,

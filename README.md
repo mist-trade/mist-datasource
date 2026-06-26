@@ -257,6 +257,33 @@ uv run pyright src/
 
 使用 PowerShell 脚本一键部署（需要管理员权限）：
 
+### TDX WinSW 服务路径
+
+新的 TDX 路径仍然是 `mist-datasource` 中的 Python TDX adapter，对外提供
+`http://127.0.0.1:9001` 上的 FastAPI HTTP/WebSocket 接口；不是让 NestJS
+直接调用通达信本地 HTTP 或 SDK。
+
+Windows 服务名为 `mist-tdx-datasource`，由 WinSW 管理：
+
+```powershell
+.\scripts\winsw\install-tdx-datasource.ps1 -WinSWExe D:\tools\winsw\winsw.exe
+.\scripts\winsw\test-tdx-datasource.ps1
+```
+
+迁移期间，Mist backend 的 `TDX_BASE_URL` 默认仍保持：
+
+```env
+TDX_BASE_URL=http://127.0.0.1:9001
+```
+
+这个新 TDX 路径不需要 `DATASOURCE_DB`。订阅意图、K 线持久化和业务数据仍由
+NestJS / MySQL 负责，Python adapter 只维护运行时订阅、采集和转发状态。
+
+TDX 终端登录、授权状态和通达信策略清理不属于公开服务自动化的一部分。部署或重启
+前仍需要运维人员确认通达信终端已登录，并在终端中手动清理冲突策略；服务只通过
+`/health` 暴露 `tdxHttpReachable`、`tqInitialized`、`collectorState` 等状态，供
+私有 guard 或人工运维判断。
+
 ### SDK 路径约束
 
 Windows 生产部署不会复制或打包通达信 / miniQMT SDK 文件。服务通过 `.env` 中的绝对路径引用已授权机器上的现有安装。
@@ -279,20 +306,24 @@ TDX_SDK_PATH=F:/quant/tdx/PYPlugins/user
 
 不要只复制 `tqcenter.py` 到部署包。`TPythClient.dll` 在 `TDX_SDK_PATH` 的上一级目录，SDK 会按这个父目录关系定位它；移动目录后需要同步修改 `.env`，并可能需要在通达信终端里清理旧策略身份。
 
-QMT 预期配置：
+QMT 预期配置，保留给后续手工启用或未来服务化：
 
 ```env
 QMT_PATH=F:/quant/qmt
 QMT_SDK_PATH=
 ```
 
-留空 `QMT_SDK_PATH` 会跳过 QMT 服务注册。
+当前 Mist Windows appliance 不注册也不启动 QMT 服务。保留这些配置不会影响
+TDX/Backend 的 WinSW 部署。
 
 部署前可先运行 SDK 预检：
 
 ```powershell
 .\scripts\preflight-sdk.ps1
 ```
+
+旧的 `deploy_windows.ps1` / NSSM 路径仅保留给手工调试和回滚；Mist Windows
+appliance 不再依赖 NSSM，也不会调用它注册 QMT。
 
 ```powershell
 # 完整部署（安装依赖 + 运行测试 + 注册服务）
@@ -304,8 +335,11 @@ QMT_SDK_PATH=
 # 仅运行测试
 .\scripts\deploy_windows.ps1 -Only test
 
-# 仅注册服务
+# 仅注册 legacy 服务，不用于当前 appliance 主路径
 .\scripts\deploy_windows.ps1 -Only service
+
+# 手工调试时仅注册 legacy QMT NSSM 服务
+.\scripts\deploy_windows.ps1 -Only service -ServiceInstance qmt
 
 # 跳过服务注册
 .\scripts\deploy_windows.ps1 -SkipService

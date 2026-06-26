@@ -9,10 +9,27 @@ from pydantic import BaseModel, Field
 class WSMessage(BaseModel):
     """WebSocket 消息标准格式."""
 
-    type: Literal["quote", "trade", "order", "position", "heartbeat", "error"]
+    type: Literal[
+        "ready",
+        "bar",
+        "quote",
+        "trade",
+        "order",
+        "position",
+        "heartbeat",
+        "ping",
+        "pong",
+        "sync_subscriptions",
+        "subscribe",
+        "unsubscribe",
+        "subscribed",
+        "unsubscribed",
+        "error",
+    ]
+    provider: str | None = None
     data: dict[str, Any]
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
 
     def to_json(self) -> str:
         """Convert message to JSON string."""
-        return self.model_dump_json()
+        return self.model_dump_json(exclude_none=True)

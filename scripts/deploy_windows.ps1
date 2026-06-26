@@ -8,10 +8,13 @@
 #   .\scripts\deploy_windows.ps1 -Only install     # 只运行 install 步骤
 #   .\scripts\deploy_windows.ps1 -Only test        # 只运行 test 步骤
 #   .\scripts\deploy_windows.ps1 -Only service     # 只注册服务
+#   .\scripts\deploy_windows.ps1 -Only service -ServiceInstance qmt
 
 param(
     [switch]$SkipService,
-    [string]$Only = ""
+    [string]$Only = "",
+    [ValidateSet("all", "tdx", "qmt")]
+    [string]$ServiceInstance = "all"
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,6 +29,8 @@ if ($Only -and $Only -notin @("install", "test", "service")) {
     Write-Fail "Unknown step: $Only. Use: install, test, service"
     exit 1
 }
+$installTdxService = $ServiceInstance -in @("all", "tdx")
+$installQmtService = $ServiceInstance -in @("all", "qmt")
 
 # ============================================
 # Step 1: 环境检查
@@ -286,14 +291,20 @@ if ((-not $SkipService) -and (-not $Only -or $Only -eq "service")) {
     Write-Ok "NSSM: $nssmExe"
 
     # --- TDX 服务 ---
-    $tdxDefinition = New-DatasourceServiceDefinition `
-        -Instance tdx `
-        -ProjectDir $ProjectDir `
-        -LogsDir $LogsDir
-    Ensure-DatasourceNssmService -NssmExe $nssmExe -Definition $tdxDefinition
+    if ($installTdxService) {
+        $tdxDefinition = New-DatasourceServiceDefinition `
+            -Instance tdx `
+            -ProjectDir $ProjectDir `
+            -LogsDir $LogsDir
+        Ensure-DatasourceNssmService -NssmExe $nssmExe -Definition $tdxDefinition
+    } else {
+        Write-Warn "ServiceInstance=$ServiceInstance, 跳过 legacy MistTDX 服务注册"
+    }
 
     # --- QMT 服务 ---
-    if (-not $qmtEnabled) {
+    if (-not $installQmtService) {
+        Write-Warn "ServiceInstance=$ServiceInstance, 跳过 MistQMT 服务注册"
+    } elseif (-not $qmtEnabled) {
         Write-Warn "QMT_SDK_PATH 未配置, 跳过 MistQMT 服务注册"
     } else {
         $qmtDefinition = New-DatasourceServiceDefinition `
@@ -305,8 +316,10 @@ if ((-not $SkipService) -and (-not $Only -or $Only -eq "service")) {
 
     # 启动服务
     Write-Host "`n  启动服务..." -ForegroundColor Cyan
-    Start-DatasourceNssmService -NssmExe $nssmExe -ServiceName $tdxDefinition.ServiceName
-    if ($qmtEnabled) {
+    if ($installTdxService) {
+        Start-DatasourceNssmService -NssmExe $nssmExe -ServiceName $tdxDefinition.ServiceName
+    }
+    if ($installQmtService -and $qmtEnabled) {
         Start-DatasourceNssmService -NssmExe $nssmExe -ServiceName $qmtDefinition.ServiceName
     }
 
@@ -314,8 +327,12 @@ if ((-not $SkipService) -and (-not $Only -or $Only -eq "service")) {
 
     # 最终验证
     Write-Host "`n  最终验证:" -ForegroundColor Cyan
-    Wait-HttpHealth -Name "TDX" -Url "http://127.0.0.1:9001/health" -Attempts 1 -TimeoutSeconds 5 | Out-Null
-    if ($qmtEnabled) {
+    if ($installTdxService) {
+        Wait-HttpHealth -Name "TDX" -Url "http://127.0.0.1:9001/health" -Attempts 1 -TimeoutSeconds 5 | Out-Null
+    } else {
+        Write-Warn "TDX legacy NSSM 服务未注册, 已跳过最终验证"
+    }
+    if ($installQmtService -and $qmtEnabled) {
         Wait-HttpHealth -Name "QMT" -Url "http://127.0.0.1:9002/health" -Attempts 1 -TimeoutSeconds 5 | Out-Null
     } else {
         Write-Warn "QMT 未配置, 已跳过最终验证"
