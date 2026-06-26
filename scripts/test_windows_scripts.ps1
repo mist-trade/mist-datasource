@@ -88,6 +88,11 @@ if ($deployWindows -match [regex]::Escape('--locked')) {
 Write-Host "  [PASS] deploy script avoids lockfile freshness checks" -ForegroundColor Green
 Assert-Match "deploy script logs uv sync output" $deployWindows "uv-sync.log"
 Assert-Match "deploy script prints uv sync failure tail" $deployWindows "Recent uv sync output"
+Assert-Match "deploy script prints WinSW appliance service guidance" $deployWindows "WinSW appliance service: mist-tdx-datasource"
+if ($deployWindows -match [regex]::Escape('nssm status MistTDX / MistQMT')) {
+    throw "deploy script must not print NSSM commands in appliance install completion guidance."
+}
+Write-Host "  [PASS] deploy script avoids NSSM completion guidance" -ForegroundColor Green
 if ($deployWindows -match [regex]::Escape('2>$null | Out-Null')) {
     throw "deploy script must not hide uv sync stderr/stdout."
 }
