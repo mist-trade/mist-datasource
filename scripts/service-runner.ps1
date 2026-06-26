@@ -1,3 +1,5 @@
+# Legacy NSSM runtime runner for direct datasource service registrations.
+
 param(
     [string]$Instance = "",
     [switch]$LoadOnly,

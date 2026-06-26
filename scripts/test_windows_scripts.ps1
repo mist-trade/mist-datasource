@@ -65,6 +65,7 @@ Assert-Equal `
 $windowsEnvExample = Get-Content (Join-Path $ProjectDir ".env.windows.example") -Raw
 $deployWindows = Get-Content (Join-Path $ProjectDir "scripts\deploy_windows.ps1") -Raw
 $serviceCommon = Get-Content (Join-Path $ProjectDir "scripts\service-common.ps1") -Raw
+$serviceRunner = Get-Content (Join-Path $ProjectDir "scripts\service-runner.ps1") -Raw
 $tdxWinswInstall = Get-Content (Join-Path $ProjectDir "scripts\winsw\install-tdx-datasource.ps1") -Raw
 Assert-Match "default TDX SDK path" $windowsEnvExample "TDX_SDK_PATH=F:/quant/tdx/PYPlugins/user"
 Assert-Match "default QMT path" $windowsEnvExample "QMT_PATH=F:/quant/qmt"
@@ -80,7 +81,9 @@ Assert-Match "deploy script pins uv sync python" $deployWindows "--python"
 Assert-Match "deploy script defaults to Python 3.12" $deployWindows 'if (-not $uvPython) { $uvPython = "3.12" }'
 Assert-Match "deploy script syncs from frozen lockfile" $deployWindows "--frozen"
 Assert-Match "deploy script exposes service instance selector" $deployWindows '[ValidateSet("all", "tdx", "qmt")]'
-Assert-Match "deploy script can install only QMT service" $deployWindows "-ServiceInstance qmt"
+Assert-Match "deploy script declares legacy NSSM service path" $deployWindows "legacy NSSM service path"
+Assert-Match "deploy script labels service-only mode as legacy NSSM" $deployWindows "-Only service     # only run legacy NSSM service registration"
+Assert-Match "deploy script can install only legacy QMT NSSM service" $deployWindows "-ServiceInstance qmt"
 Assert-Match "deploy script skips legacy MistTDX when service instance is qmt" $deployWindows '$installTdxService = $ServiceInstance -in @("all", "tdx")'
 if ($deployWindows -match [regex]::Escape('--locked')) {
     throw "deploy script must use --frozen, not --locked, during appliance installs."
@@ -89,6 +92,7 @@ Write-Host "  [PASS] deploy script avoids lockfile freshness checks" -Foreground
 Assert-Match "deploy script logs uv sync output" $deployWindows "uv-sync.log"
 Assert-Match "deploy script prints uv sync failure tail" $deployWindows "Recent uv sync output"
 Assert-Match "deploy script prints WinSW appliance service guidance" $deployWindows "WinSW appliance service: mist-tdx-datasource"
+Assert-Match "deploy script labels legacy NSSM service step" $deployWindows "Step 5/5: 注册 legacy NSSM 服务"
 if ($deployWindows -match [regex]::Escape('nssm status MistTDX / MistQMT')) {
     throw "deploy script must not print NSSM commands in appliance install completion guidance."
 }
@@ -98,6 +102,8 @@ if ($deployWindows -match [regex]::Escape('2>$null | Out-Null')) {
 }
 Write-Host "  [PASS] deploy script keeps uv sync output visible" -ForegroundColor Green
 Assert-Match "datasource service existence uses sc fallback" $serviceCommon "sc.exe"
+Assert-Match "service common declares legacy NSSM scope" $serviceCommon "Legacy NSSM service helpers"
+Assert-Match "service runner declares legacy NSSM scope" $serviceRunner "Legacy NSSM runtime runner"
 Assert-Match "datasource service stops existing service before reinstall" $serviceCommon '"stop", $ServiceName'
 Assert-Match "datasource service removes existing service before reinstall" $serviceCommon '"remove", $ServiceName, "confirm"'
 Assert-Match "datasource service reinstalls after removal" $serviceCommon '"install", $serviceName, $Definition.Application, $Definition.Parameters'
@@ -110,7 +116,7 @@ Assert-Equal `
     (Get-EnvValue "APP_ENV=production" "QMT_SDK_PATH")
 
 Assert-Equal `
-    "nssm fallback resolves packaged path" `
+    "legacy NSSM fallback resolves packaged path" `
     (Resolve-FullPath (Join-Path $ProjectDir "..\nssm\nssm.exe")) `
     (Resolve-NssmExe -ProjectDir $ProjectDir -PreferPathLookup:$false)
 Assert-Equal `
@@ -125,11 +131,11 @@ $tdxDefinition = New-DatasourceServiceDefinition `
     -ProjectDir $ProjectDir `
     -LogsDir (Join-Path $ProjectDir "logs")
 
-Assert-Equal "tdx service name" "MistTDX" $tdxDefinition.ServiceName
-Assert-Match "tdx runner args" $tdxDefinition.Parameters "service-runner.ps1"
-Assert-Match "tdx runner instance" $tdxDefinition.Parameters "-Instance tdx"
+Assert-Equal "legacy NSSM tdx service name" "MistTDX" $tdxDefinition.ServiceName
+Assert-Match "legacy NSSM tdx runner args" $tdxDefinition.Parameters "service-runner.ps1"
+Assert-Match "legacy NSSM tdx runner instance" $tdxDefinition.Parameters "-Instance tdx"
 Assert-Equal `
-    "tdx stdout log" `
+    "legacy NSSM tdx stdout log" `
     (Join-Path $ProjectDir "logs\tdx-stdout.log") `
     $tdxDefinition.Stdout
 

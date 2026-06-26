@@ -1,4 +1,4 @@
-# Shared NSSM service helpers for mist-datasource.
+# Legacy NSSM service helpers for mist-datasource manual debug/rollback paths.
 
 $commonScript = Join-Path $PSScriptRoot "windows-common.ps1"
 if (Test-Path $commonScript -PathType Leaf) {
