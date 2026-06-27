@@ -152,7 +152,7 @@ Assert-Match "runtime checks query normalized sector trade report data" $runtime
 Assert-Match "runtime checks query normalized sector trade report data by date" $runtimeChecks "/v1/reports/sector-trade/by-date/query"
 Assert-Match "runtime checks query normalized market trade report data" $runtimeChecks "/v1/reports/market-trade/query"
 Assert-Match "runtime checks query normalized market trade report data by date" $runtimeChecks "/v1/reports/market-trade/by-date/query"
-Assert-Match "runtime checks query normalized report data" $runtimeChecks "/v1/reports/data/query"
+Assert-Match "runtime checks documents unsupported report data smoke" $runtimeChecks "get_report_data is not included in runtime smoke"
 Assert-Match "runtime checks support optional formula smoke" $runtimeChecks "IncludeFormulaSmoke"
 Assert-Match "runtime checks verify raw TDX formula metadata" $runtimeChecks "formula_get_all"
 Assert-Match "runtime checks query normalized formula metadata" $runtimeChecks "/v1/formulas/metadata/query"

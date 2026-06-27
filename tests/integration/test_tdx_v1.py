@@ -635,7 +635,7 @@ async def test_providers_returns_tdx_and_qmt_capability_manifests(
     assert tdx_families["stock-trade-aggregate"] == "supported"
     assert tdx_families["sector-trade-aggregate"] == "supported"
     assert tdx_families["market-trade-aggregate"] == "supported"
-    assert tdx_families["report-data"] == "supported"
+    assert tdx_families["report-data"] == "unsupported"
     assert tdx_families["formula-data"] == "supported"
     assert tdx_families["formula-metadata"] == "supported"
     assert tdx_families["formula-execution"] == "supported"

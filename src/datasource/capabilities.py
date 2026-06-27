@@ -87,7 +87,6 @@ TDX_CAPABILITY_STATUSES: dict[str, tuple[CapabilityStatus, str, list[str], str |
             "get_gpjy_value",
             "get_bkjy_value",
             "get_scjy_value",
-            "get_report_data",
         ],
         None,
     ),
@@ -116,7 +115,12 @@ TDX_CAPABILITY_STATUSES: dict[str, tuple[CapabilityStatus, str, list[str], str |
         ["get_scjy_value", "get_scjy_value_by_date"],
         None,
     ),
-    "report-data": ("supported", "stable", ["get_report_data"], None),
+    "report-data": (
+        "unsupported",
+        "planned",
+        [],
+        "Current TDX MCP runtime does not expose get_report_data",
+    ),
     "formulas": (
         "supported",
         "operator",

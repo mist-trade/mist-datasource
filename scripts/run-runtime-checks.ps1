@@ -678,11 +678,7 @@ function Test-FinanceReportSmoke {
     Assert-EnvelopeOk -Envelope $marketTradeByDate -Name "market trade aggregate by date query"
     Assert-PropertyExists -Object $marketTradeByDate.data -Name "items"
 
-    $reportData = Invoke-JsonPost `
-        -Uri "$BaseUrl/v1/reports/data/query" `
-        -Payload @{ symbol = $Symbol }
-    Assert-EnvelopeOk -Envelope $reportData -Name "report data query"
-    Assert-PropertyExists -Object $reportData.data -Name "items"
+    # get_report_data is not included in runtime smoke because the validated TDX MCP returns -32601 for that tqcenter method.
 }
 
 function Test-ReferenceInstrumentSmoke {
