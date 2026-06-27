@@ -23,6 +23,7 @@ class QMTMockAdapter(MarketDataAdapter):
         pass
 
     async def get_stock_list(self, market: str = "0") -> list[str]:
+        _ = market
         return [
             "000001.SZ",
             "600000.SH",
@@ -35,6 +36,7 @@ class QMTMockAdapter(MarketDataAdapter):
         ]
 
     async def get_stock_list_in_sector(self, block_code: str = "沪深300", block_type: int = 0, list_type: int = 0) -> list[str]:
+        _ = (block_code, block_type, list_type)
         return [
             "000001.SZ",
             "600000.SH",
@@ -55,6 +57,7 @@ class QMTMockAdapter(MarketDataAdapter):
         end_time: str = "",
         **kwargs: Any,
     ) -> dict[str, Any]:
+        _ = (period, start_time, end_time, kwargs)
         result = {}
         for field in fields:
             result[field] = {
@@ -78,6 +81,7 @@ class QMTMockAdapter(MarketDataAdapter):
     # ---- 行情扩展接口 mock ----
 
     async def get_local_data(self, stock_list, fields, period="1d", start_time="", end_time="", **kwargs):
+        _ = (period, start_time, end_time, kwargs)
         result = {}
         for field in fields:
             result[field] = {
@@ -99,9 +103,11 @@ class QMTMockAdapter(MarketDataAdapter):
         }
 
     async def get_full_kline(self, stock_list, period="1m", fields=None, start_time="", end_time="", count=1, dividend_type="none"):
+        _ = (period, fields, start_time, end_time, count, dividend_type)
         return {code: {"close": round(random.uniform(10, 100), 2)} for code in stock_list}
 
     async def get_divid_factors(self, stock_code, start_time="", end_time=""):
+        _ = (stock_code, start_time, end_time)
         return {
             "interest": 0.1,
             "stockBonus": 0.0,
@@ -117,9 +123,11 @@ class QMTMockAdapter(MarketDataAdapter):
         pass
 
     async def get_trading_dates(self, market, start_time="", end_time="", count=-1):
+        _ = (market, start_time, end_time, count)
         return ["20260102", "20260105", "20260106", "20260107", "20260108"]
 
     async def get_trading_calendar(self, market, start_time="", end_time=""):
+        _ = (market, start_time, end_time)
         return ["20260102", "20260105", "20260106", "20260107", "20260108"]
 
     async def get_holidays(self):
@@ -134,6 +142,7 @@ class QMTMockAdapter(MarketDataAdapter):
     # ---- 合约信息接口 mock ----
 
     async def get_instrument_detail(self, stock_code, iscomplete=False):
+        _ = iscomplete
         return {
             "ExchangeID": "SH",
             "InstrumentID": stock_code,
@@ -143,11 +152,13 @@ class QMTMockAdapter(MarketDataAdapter):
         }
 
     async def get_instrument_type(self, stock_code):
+        _ = stock_code
         return {"index": False, "stock": True, "fund": False, "etf": False}
 
     # ---- 财务数据接口 mock ----
 
     async def get_financial_data(self, stock_list, table_list=None, start_time="", end_time="", report_type="report_time"):
+        _ = (table_list, start_time, end_time, report_type)
         return {code: {} for code in stock_list}
 
     async def download_financial_data(self, stock_list, table_list=None):
@@ -165,27 +176,32 @@ class QMTMockAdapter(MarketDataAdapter):
         pass
 
     async def get_index_weight(self, index_code):
+        _ = index_code
         return {"600000.SH": 0.05, "000001.SZ": 0.03, "600519.SH": 0.08}
 
     async def download_index_weight(self):
         pass
 
     async def create_sector_folder(self, parent_node, folder_name, overwrite=True):
+        _ = (parent_node, overwrite)
         return folder_name
 
     async def create_sector(self, parent_node="", sector_name="", overwrite=True):
+        _ = (parent_node, overwrite)
         return sector_name
 
     async def add_sector(self, sector_name, stock_list):
         pass
 
     async def remove_stock_from_sector(self, sector_name, stock_list):
+        _ = (sector_name, stock_list)
         return True
 
     async def remove_sector(self, sector_name):
         pass
 
     async def reset_sector(self, sector_name, stock_list):
+        _ = (sector_name, stock_list)
         return True
 
     # ---- ETF/可转债接口 mock ----
@@ -197,6 +213,7 @@ class QMTMockAdapter(MarketDataAdapter):
         pass
 
     async def get_ipo_info(self, start_time="", end_time=""):
+        _ = (start_time, end_time)
         return []
 
     async def get_etf_info(self):

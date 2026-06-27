@@ -88,6 +88,7 @@ class QMTAdapter(MarketDataAdapter):
 
         对应 QMT SDK: xtdata.get_stock_list_in_sector(sector_name)
         """
+        _ = block_type
         try:
             if list_type == 0:
                 return self._xtdata.get_stock_list_in_sector(block_code)
