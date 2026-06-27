@@ -95,6 +95,10 @@ if ($deployWindows -match [regex]::Escape('2>$null | Out-Null')) {
 Write-Host "  [PASS] deploy script keeps uv sync output visible" -ForegroundColor Green
 Assert-Match "TDX WinSW installer accepts started-successfully output" $tdxWinswInstall "started successfully"
 Assert-Match "TDX WinSW installer clears native exit code after success" $tdxWinswInstall '$global:LASTEXITCODE = 0'
+if ($tdxWinswInstall -match [regex]::Escape('("refresh")')) {
+    throw "TDX WinSW installer must not call refresh; older bundled WinSW builds do not support it."
+}
+Write-Host "  [PASS] TDX WinSW installer avoids unsupported refresh command" -ForegroundColor Green
 Assert-Match "runtime checks run script self-test" $runtimeChecks "scripts\test_windows_scripts.ps1"
 Assert-Match "runtime checks can require source self-test" $runtimeChecks "RequireScriptSelfTest"
 Assert-Match "runtime checks knows source-only env example" $runtimeChecks ".env.windows.example"

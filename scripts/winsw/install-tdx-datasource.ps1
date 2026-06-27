@@ -245,18 +245,10 @@ else {
 
 Write-Step "Install or update $ServiceName"
 if ($ServiceExists) {
-    if ($PSCmdlet.ShouldProcess($ServiceName, "Refresh WinSW service definition")) {
-        try {
-            Invoke-WinSWCommand -Exe $ServiceExe -Arguments @("refresh") | Out-Null
-            Write-Ok "$ServiceName service refreshed"
-        }
-        catch {
-            Write-Warn "WinSW refresh failed, reinstalling service definition: $_"
-            Invoke-WinSWCommand -Exe $ServiceExe -Arguments @("stop") -AllowFailure | Out-Null
-            Invoke-WinSWCommand -Exe $ServiceExe -Arguments @("uninstall") -AllowFailure | Out-Null
-            Invoke-WinSWCommand -Exe $ServiceExe -Arguments @("install") | Out-Null
-            Write-Ok "$ServiceName service reinstalled"
-        }
+    if ($PSCmdlet.ShouldProcess($ServiceName, "Reinstall WinSW service definition")) {
+        Invoke-WinSWCommand -Exe $ServiceExe -Arguments @("uninstall") -AllowFailure | Out-Null
+        Invoke-WinSWCommand -Exe $ServiceExe -Arguments @("install") | Out-Null
+        Write-Ok "$ServiceName service reinstalled"
     }
 }
 else {
