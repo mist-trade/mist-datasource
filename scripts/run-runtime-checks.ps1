@@ -316,6 +316,43 @@ function Assert-NumericProperty {
     }
 }
 
+function Get-RawMarketDataContainers {
+    param(
+        [object]$Result,
+        [string]$Symbol
+    )
+
+    $fields = @("Open", "High", "Low", "Close", "Volume", "Amount")
+    $containers = @()
+    if ($null -ne $Result) {
+        $containers += $Result
+    }
+
+    $value = Get-NativeProperty -Object $Result -Name "Value"
+    if ($null -ne $value) {
+        $containers += $value
+    }
+
+    # Raw get_market_data direct result shapes vary by TDX bridge version:
+    # some wrap rows under Value, some under the symbol, and some return field tables directly.
+    foreach ($container in @($containers)) {
+        $symbolData = Get-ObjectProperty -Object $container -Name $Symbol
+        if ($null -ne $symbolData) {
+            $containers += $symbolData
+            continue
+        }
+
+        if ($null -ne $container -and $container.PSObject.Properties.Count -gt 0) {
+            $firstProperty = $container.PSObject.Properties[0]
+            if ($fields -notcontains $firstProperty.Name) {
+                $containers += $firstProperty.Value
+            }
+        }
+    }
+
+    return $containers
+}
+
 function Invoke-JsonPost {
     param(
         [string]$Uri,
@@ -337,21 +374,20 @@ function Assert-RawMarketDataResult {
         [string]$Symbol
     )
 
-    $value = Get-NativeProperty -Object $Result -Name "Value"
-    if ($null -eq $value) {
-        throw "Raw get_market_data result is missing Value."
-    }
-
-    $symbolData = Get-ObjectProperty -Object $value -Name $Symbol
-    if ($null -eq $symbolData -and $value.PSObject.Properties.Count -gt 0) {
-        $symbolData = $value.PSObject.Properties[0].Value
-    }
-    if ($null -eq $symbolData) {
-        throw "Raw get_market_data Value has no symbol rows."
-    }
+    $containers = @(Get-RawMarketDataContainers -Result $Result -Symbol $Symbol)
 
     foreach ($field in @("Open", "High", "Low", "Close", "Volume", "Amount")) {
-        $series = Get-NativeProperty -Object $symbolData -Name $field
+        $series = $null
+        foreach ($container in $containers) {
+            $candidate = Get-NativeProperty -Object $container -Name $field
+            if ($null -ne $candidate) {
+                $series = $candidate
+                break
+            }
+        }
+        if ($null -eq $series) {
+            throw "Raw get_market_data result is missing field $field. Accepted shapes: Value wrapper, symbol wrapper, or Raw get_market_data direct result."
+        }
         Assert-ArrayNotEmpty -Value $series -Name "Raw get_market_data field $field"
     }
 }

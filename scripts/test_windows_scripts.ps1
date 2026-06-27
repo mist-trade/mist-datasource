@@ -126,6 +126,7 @@ Assert-Match "runtime checks query normalized bars" $runtimeChecks "/v1/bars/que
 Assert-Match "runtime checks query normalized snapshots" $runtimeChecks "/v1/snapshots/query"
 Assert-Match "runtime checks query sectors" $runtimeChecks "/v1/sectors/query"
 Assert-Match "runtime checks verify raw TDX market data" $runtimeChecks "get_market_data"
+Assert-Match "runtime checks accept unwrapped raw market data" $runtimeChecks "Raw get_market_data direct result"
 Assert-Match "runtime checks verify raw TDX snapshot" $runtimeChecks "get_market_snapshot"
 Assert-Match "runtime checks can explicitly allow websocket subscription changes" $runtimeChecks "AllowWebSocketSubscriptionChange"
 Assert-Match "runtime checks support optional live bar wait" $runtimeChecks "RequireLiveBar"
