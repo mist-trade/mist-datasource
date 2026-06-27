@@ -121,6 +121,10 @@ def _series_for_symbol(
             if isinstance(values, dict):
                 return values
 
+    symbol_values = _symbol_values_from_symbol_wrapper(native, candidate_keys)
+    if isinstance(symbol_values, dict):
+        return _array_series_for_field(symbol_values, field_name)
+
     symbol_values = _symbol_values_from_value_wrapper(native, candidate_keys)
     if isinstance(symbol_values, dict):
         return _array_series_for_field(symbol_values, field_name)
@@ -142,6 +146,20 @@ def _dataframe_row_for_symbol(field_value: Any, candidate_keys: tuple[str, ...])
             return row.to_dict()
         return dict(row)
     return {}
+
+
+def _symbol_values_from_symbol_wrapper(native: dict[str, Any], candidate_keys: tuple[str, ...]) -> dict[str, Any] | None:
+    for key in candidate_keys:
+        values = native.get(key)
+        if isinstance(values, dict):
+            return values
+
+    normalized_candidates = {key.upper() for key in candidate_keys}
+    for key, values in native.items():
+        if str(key).upper() in normalized_candidates and isinstance(values, dict):
+            return values
+
+    return None
 
 
 def _symbol_values_from_value_wrapper(native: dict[str, Any], candidate_keys: tuple[str, ...]) -> dict[str, Any] | None:

@@ -88,6 +88,77 @@ async def test_get_bars_calls_tdx_market_data_and_returns_normalized_rows():
 
 
 @pytest.mark.asyncio
+async def test_get_bars_accepts_value_wrapper_array_shape():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_market_data": {
+                "ErrorId": 0,
+                "Value": {
+                    "600519.SH": {
+                        "Date": ["20260626"],
+                        "Time": ["093100"],
+                        "Open": ["10.1"],
+                        "High": ["10.3"],
+                        "Low": ["10.0"],
+                        "Close": ["10.2"],
+                        "Volume": ["1200"],
+                        "Amount": ["12345.6"],
+                    }
+                },
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    bars = await provider.get_bars(
+        ["600519.SH"],
+        period="1m",
+        start_time=None,
+        end_time=None,
+        count=1,
+    )
+
+    assert len(bars) == 1
+    assert bars[0].barTime == "2026-06-26T09:31:00+08:00"
+    assert bars[0].open == 10.1
+    assert bars[0].close == 10.2
+
+
+@pytest.mark.asyncio
+async def test_get_bars_accepts_symbol_wrapper_array_shape():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_market_data": {
+                "600519.SH": {
+                    "Date": ["20260626"],
+                    "Time": ["093100"],
+                    "Open": ["10.1"],
+                    "High": ["10.3"],
+                    "Low": ["10.0"],
+                    "Close": ["10.2"],
+                    "Volume": ["1200"],
+                    "Amount": ["12345.6"],
+                }
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    bars = await provider.get_bars(
+        ["600519.SH"],
+        period="1m",
+        start_time=None,
+        end_time=None,
+        count=1,
+    )
+
+    assert len(bars) == 1
+    assert bars[0].barTime == "2026-06-26T09:31:00+08:00"
+    assert bars[0].open == 10.1
+    assert bars[0].close == 10.2
+
+
+@pytest.mark.asyncio
 async def test_get_snapshots_calls_tdx_snapshot_and_returns_normalized_snapshot():
     fake_client = FakeTdxHttpClient({"get_market_snapshot": native_snapshot()})
     provider = TdxDatasourceProvider(fake_client)

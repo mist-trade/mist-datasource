@@ -299,8 +299,9 @@ gateway path:
    - `tdxHttpReachable` is true
    - `tqInitialized` is true when exposed
 2. `POST /v1/raw/tdx/call` with `method=get_market_data`
-   - native result has `Value`
-   - `Value[symbol]` has `Open`, `High`, `Low`, `Close`, `Volume`, `Amount`
+   - native result has `Open`, `High`, `Low`, `Close`, `Volume`, `Amount`
+     through one of the fixture-backed shapes: direct field tables,
+     `Value[symbol]`, or top-level `symbol`
 3. `POST /v1/bars/query`
    - envelope `ok=true`
    - `data.bars` is non-empty
@@ -367,6 +368,14 @@ The optional probe uses read-only formula metadata:
 Formula execution endpoints are normalized but intentionally guarded by request
 size and timeout limits; run execution tests separately with operator-selected
 formulas.
+
+### Fixture-backed HTTP Shapes
+
+`tests/unit/test_tdx_provider.py` keeps regression fixtures for documented TDX
+HTTP `Value` wrappers and Windows-smoke-compatible runtime variants. The basic
+bar fixtures cover direct field tables, `Value[symbol]` array rows, and
+top-level `symbol` array rows, so changes in TDX bridge wrapping fail locally
+before appliance smoke testing.
 
 ### Live Subscription Mode
 
