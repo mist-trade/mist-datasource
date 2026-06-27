@@ -43,6 +43,14 @@ def native_bar_rows() -> dict[str, Any]:
     }
 
 
+def native_bar_rows_with_extensions() -> dict[str, Any]:
+    rows = native_bar_rows()
+    rows["ForwardFactor"] = {"600519.SH": {"2026-06-26T09:31:00": "0.711862"}}
+    rows["VolInStock"] = {"600519.SH": {"2026-06-26T09:31:00": "182942480"}}
+    rows["UnreviewedProviderField"] = {"600519.SH": {"2026-06-26T09:31:00": "ignore-me"}}
+    return rows
+
+
 def native_snapshot() -> dict[str, Any]:
     return {
         "Now": "10.2",
@@ -85,6 +93,42 @@ async def test_get_bars_calls_tdx_market_data_and_returns_normalized_rows():
     assert len(bars) == 1
     assert bars[0].symbol == "600519.SH"
     assert bars[0].close == 10.2
+
+
+@pytest.mark.asyncio
+async def test_get_bars_passes_requested_fields_and_adjustment_options():
+    requested_fields = ["Open", "Close", "ForwardFactor", "VolInStock"]
+    fake_client = FakeTdxHttpClient({"get_market_data": native_bar_rows_with_extensions()})
+    provider = TdxDatasourceProvider(fake_client)
+
+    bars = await provider.get_bars(
+        ["600519.SH"],
+        period="1d",
+        start_time="2026-06-01",
+        end_time="2026-06-26",
+        count=20,
+        fields=requested_fields,
+        dividend_type="none",
+        fill_data=False,
+    )
+
+    assert fake_client.calls == [
+        (
+            "get_market_data",
+            {
+                "stock_list": ["600519.SH"],
+                "field_list": requested_fields,
+                "period": "1d",
+                "start_time": "2026-06-01",
+                "end_time": "2026-06-26",
+                "count": 20,
+                "dividend_type": "none",
+                "fill_data": False,
+            },
+        )
+    ]
+    assert bars[0].forwardFactor == 0.711862
+    assert bars[0].volInStock == 182942480.0
 
 
 @pytest.mark.asyncio

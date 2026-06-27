@@ -19,12 +19,26 @@ class TdxBar(TdxModel):
     close: float
     volume: float
     amount: float
+    forward_factor: float | None = Field(default=None, alias="forwardFactor")
+    vol_in_stock: float | None = Field(default=None, alias="volInStock")
     provider: str = "tdx"
     received_at: str = Field(alias="receivedAt")
+
+    def model_dump(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(*args, **kwargs)
 
     @property
     def barTime(self) -> str:
         return self.bar_time
+
+    @property
+    def forwardFactor(self) -> float | None:
+        return self.forward_factor
+
+    @property
+    def volInStock(self) -> float | None:
+        return self.vol_in_stock
 
     @property
     def receivedAt(self) -> str:
@@ -77,6 +91,9 @@ class TdxBarQueryRequest(TdxModel):
     start_time: str | None = Field(default=None, alias="startTime")
     end_time: str | None = Field(default=None, alias="endTime")
     count: int | None = None
+    fields: list[str] | None = None
+    dividend_type: Literal["none", "front", "back"] = Field(default="front", alias="dividendType")
+    fill_data: bool = Field(default=True, alias="fillData")
     include_raw: bool = Field(default=False, alias="includeRaw")
 
     @field_validator("start_time", "end_time", mode="before")

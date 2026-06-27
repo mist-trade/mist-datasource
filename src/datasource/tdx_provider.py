@@ -59,18 +59,27 @@ class TdxDatasourceProvider:
         start_time: str | None,
         end_time: str | None,
         count: int | None,
+        fields: list[str] | None = None,
+        dividend_type: str | None = None,
+        fill_data: bool | None = None,
     ) -> list[TdxBar]:
         tdx_symbols = [to_tdx_http_code(symbol) for symbol in symbols]
+        params: dict[str, Any] = {
+            "stock_list": tdx_symbols,
+            "field_list": fields if fields is not None else TDX_MARKET_DATA_FIELDS,
+            "period": period,
+            "start_time": start_time,
+            "end_time": end_time,
+            "count": count,
+        }
+        if dividend_type is not None:
+            params["dividend_type"] = dividend_type
+        if fill_data is not None:
+            params["fill_data"] = fill_data
+
         native = await self.client.call(
             "get_market_data",
-            {
-                "stock_list": tdx_symbols,
-                "field_list": TDX_MARKET_DATA_FIELDS,
-                "period": period,
-                "start_time": start_time,
-                "end_time": end_time,
-                "count": count,
-            },
+            params,
         )
 
         bars: list[TdxBar] = []

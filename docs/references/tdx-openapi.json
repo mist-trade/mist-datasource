@@ -144,6 +144,16 @@
             ],
             "title": "Count"
           },
+          "dividendType": {
+            "default": "front",
+            "enum": [
+              "none",
+              "front",
+              "back"
+            ],
+            "title": "Dividendtype",
+            "type": "string"
+          },
           "endTime": {
             "anyOf": [
               {
@@ -154,6 +164,25 @@
               }
             ],
             "title": "Endtime"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
+          },
+          "fillData": {
+            "default": true,
+            "title": "Filldata",
+            "type": "boolean"
           },
           "includeRaw": {
             "default": false,

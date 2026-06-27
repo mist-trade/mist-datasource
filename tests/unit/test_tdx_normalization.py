@@ -91,6 +91,22 @@ def test_tdx_bar_query_request_normalizes_naive_time_aliases_to_beijing_iso():
     assert payload["endTime"] == "2026-06-26T10:00:00+08:00"
 
 
+def test_tdx_bar_query_request_accepts_field_and_adjustment_aliases():
+    request = TdxBarQueryRequest(
+        symbols=["600519.SH"],
+        period="1d",
+        fields=["Open", "Close", "ForwardFactor", "VolInStock"],
+        dividendType="none",
+        fillData=False,
+    )
+
+    payload = request.model_dump()
+
+    assert payload["fields"] == ["Open", "Close", "ForwardFactor", "VolInStock"]
+    assert payload["dividendType"] == "none"
+    assert payload["fillData"] is False
+
+
 def test_normalize_bar_rows_outputs_iso_beijing_time_and_numbers():
     rows = normalize_tdx_bar_rows(
         symbol="SH600519",
@@ -140,6 +156,38 @@ def test_normalize_bar_rows_accepts_tdx_http_value_wrapper_arrays():
     assert rows[1].barTime == "2026-06-26T00:00:00+08:00"
     assert rows[1].close == 1168.63
     assert rows[1].amount == 592201.44
+
+
+def test_normalize_bar_rows_preserves_named_tdx_extension_fields_without_raw_payload():
+    rows = normalize_tdx_bar_rows(
+        symbol="600519.SH",
+        period="1d",
+        native={
+            "ErrorId": "0",
+            "Value": {
+                "600519.SH": {
+                    "Date": ["20260626"],
+                    "Time": ["0"],
+                    "Open": ["1199.00"],
+                    "High": ["1199.00"],
+                    "Low": ["1168.10"],
+                    "Close": ["1168.63"],
+                    "Volume": ["5006647.00"],
+                    "Amount": ["592201.44"],
+                    "ForwardFactor": ["0.711862"],
+                    "VolInStock": ["182942480"],
+                    "UnreviewedProviderField": ["should-not-leak"],
+                }
+            },
+        },
+    )
+
+    assert len(rows) == 1
+    payload = rows[0].model_dump()
+    assert payload["forwardFactor"] == 0.711862
+    assert payload["volInStock"] == 182942480.0
+    assert "raw" not in payload
+    assert "UnreviewedProviderField" not in payload
 
 
 def test_normalize_bar_rows_returns_empty_when_requested_symbol_is_missing():

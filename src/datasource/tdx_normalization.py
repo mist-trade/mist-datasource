@@ -43,6 +43,12 @@ def normalize_number(value: Any) -> float:
     return float(value)
 
 
+def normalize_optional_number(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    return float(value)
+
+
 def normalize_tdx_bar_rows(symbol: str, period: str, native: dict[str, Any]) -> list[TdxBar]:
     normalized_symbol = normalize_symbol(symbol)
     open_values = _series_for_symbol(native, "open", normalized_symbol)
@@ -51,6 +57,8 @@ def normalize_tdx_bar_rows(symbol: str, period: str, native: dict[str, Any]) -> 
     close_values = _series_for_symbol(native, "close", normalized_symbol)
     volume_values = _series_for_symbol(native, "volume", normalized_symbol)
     amount_values = _series_for_symbol(native, "amount", normalized_symbol)
+    forward_factor_values = _series_for_symbol(native, "ForwardFactor", normalized_symbol)
+    vol_in_stock_values = _series_for_symbol(native, "VolInStock", normalized_symbol)
 
     timestamps = sorted(
         set().union(
@@ -60,6 +68,8 @@ def normalize_tdx_bar_rows(symbol: str, period: str, native: dict[str, Any]) -> 
             close_values,
             volume_values,
             amount_values,
+            forward_factor_values,
+            vol_in_stock_values,
         )
     )
 
@@ -74,6 +84,8 @@ def normalize_tdx_bar_rows(symbol: str, period: str, native: dict[str, Any]) -> 
             close=normalize_number(close_values.get(timestamp)),
             volume=normalize_number(volume_values.get(timestamp)),
             amount=normalize_number(amount_values.get(timestamp)),
+            forwardFactor=normalize_optional_number(forward_factor_values.get(timestamp)),
+            volInStock=normalize_optional_number(vol_in_stock_values.get(timestamp)),
             provider="tdx",
             receivedAt=beijing_iso(),
         )

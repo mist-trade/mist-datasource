@@ -11,6 +11,7 @@ from tdx.main import app
 
 class FakeTdxProvider:
     def __init__(self) -> None:
+        self.bar_queries: list[dict[str, Any]] = []
         self.raw_calls: list[tuple[str, dict[str, Any]]] = []
         self.sector_queries: list[str] = []
         self.sector_list_queries: list[int] = []
@@ -53,8 +54,22 @@ class FakeTdxProvider:
         start_time: str | None,
         end_time: str | None,
         count: int | None,
+        fields: list[str] | None = None,
+        dividend_type: str = "front",
+        fill_data: bool = True,
     ) -> list[TdxBar]:
-        _ = (start_time, end_time)
+        self.bar_queries.append(
+            {
+                "symbols": symbols,
+                "period": period,
+                "startTime": start_time,
+                "endTime": end_time,
+                "count": count,
+                "fields": fields,
+                "dividendType": dividend_type,
+                "fillData": fill_data,
+            }
+        )
         if self.fail_bars:
             raise TdxHttpError(
                 code="TDX_HTTP_UNAVAILABLE",
@@ -870,6 +885,39 @@ async def test_bars_query_returns_normalized_envelope(v1_client: AsyncClient) ->
     assert body["meta"]["transport"] == "http"
     assert body["data"]["bars"][0]["symbol"] == "600519.SH"
     assert body["data"]["bars"][0]["barTime"] == "2026-04-06T09:31:00+08:00"
+
+
+@pytest.mark.asyncio
+async def test_bars_query_passes_fields_and_adjustment_options(v1_client: AsyncClient) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/bars/query",
+        json={
+            "symbols": ["600519.SH"],
+            "period": "1d",
+            "startTime": "2026-04-06T09:30:00",
+            "endTime": "2026-04-06T15:00:00",
+            "count": 20,
+            "fields": ["Open", "Close", "ForwardFactor", "VolInStock"],
+            "dividendType": "none",
+            "fillData": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert tdx.main.tdx_provider.bar_queries == [
+        {
+            "symbols": ["600519.SH"],
+            "period": "1d",
+            "startTime": "2026-04-06T09:30:00+08:00",
+            "endTime": "2026-04-06T15:00:00+08:00",
+            "count": 20,
+            "fields": ["Open", "Close", "ForwardFactor", "VolInStock"],
+            "dividendType": "none",
+            "fillData": False,
+        }
+    ]
 
 
 @pytest.mark.asyncio
