@@ -9,6 +9,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from qmt.routes.etf import router as etf_router
+from qmt.routes.financial import router as financial_router
+from qmt.routes.market import router as market_router
+from qmt.routes.sector import router as sector_router
+from qmt.routes.stock import router as stock_router
+from qmt.routes.ws import router as ws_router
 from src.adapter import create_qmt_adapter
 from src.adapter.base import MarketDataAdapter
 from src.core.config import settings
@@ -22,14 +28,14 @@ ws_manager = ConnectionManager()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     """应用生命周期管理器.
 
     启动时创建并初始化 QMT 适配器，关闭时执行清理.
     对应 QMT SDK: xtdata 连接 MiniQMT 客户端
 
     Args:
-        app: FastAPI 应用实例
+        _app: FastAPI 应用实例
 
     Yields:
         None
@@ -81,14 +87,6 @@ async def health():
         "adapter": type(qmt_adapter).__name__ if qmt_adapter else "none",
         "connections": ws_manager.connection_count,
     }
-
-
-from qmt.routes.etf import router as etf_router
-from qmt.routes.financial import router as financial_router
-from qmt.routes.market import router as market_router
-from qmt.routes.sector import router as sector_router
-from qmt.routes.stock import router as stock_router
-from qmt.routes.ws import router as ws_router
 
 app.include_router(market_router, prefix="/api/qmt/market", tags=["Market"])
 app.include_router(stock_router, prefix="/api/qmt/stock", tags=["Stock"])
