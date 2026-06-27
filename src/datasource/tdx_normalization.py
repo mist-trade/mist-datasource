@@ -115,13 +115,15 @@ def _series_for_symbol(
     if _looks_like_dataframe(field_map):
         return _dataframe_row_for_symbol(field_map, candidate_keys)
 
-    if not isinstance(field_map, dict):
-        return {}
+    if isinstance(field_map, dict):
+        for key in candidate_keys:
+            values = field_map.get(key)
+            if isinstance(values, dict):
+                return values
 
-    for key in candidate_keys:
-        values = field_map.get(key)
-        if isinstance(values, dict):
-            return values
+    symbol_values = _symbol_values_from_value_wrapper(native, candidate_keys)
+    if isinstance(symbol_values, dict):
+        return _array_series_for_field(symbol_values, field_name)
 
     return {}
 
@@ -140,6 +142,74 @@ def _dataframe_row_for_symbol(field_value: Any, candidate_keys: tuple[str, ...])
             return row.to_dict()
         return dict(row)
     return {}
+
+
+def _symbol_values_from_value_wrapper(native: dict[str, Any], candidate_keys: tuple[str, ...]) -> dict[str, Any] | None:
+    value_wrapper = _get_native_value(native, "value")
+    if not isinstance(value_wrapper, dict):
+        return None
+
+    for key in candidate_keys:
+        values = value_wrapper.get(key)
+        if isinstance(values, dict):
+            return values
+
+    normalized_candidates = {key.upper() for key in candidate_keys}
+    for key, values in value_wrapper.items():
+        if str(key).upper() in normalized_candidates and isinstance(values, dict):
+            return values
+
+    return None
+
+
+def _array_series_for_field(symbol_values: dict[str, Any], field_name: str) -> dict[str, Any]:
+    field_values = _get_native_value(symbol_values, field_name)
+    if not isinstance(field_values, list | tuple):
+        return {}
+
+    dates = _as_sequence(_get_native_value(symbol_values, "date"))
+    times = _as_sequence(_get_native_value(symbol_values, "time"))
+
+    series: dict[str, Any] = {}
+    for index, value in enumerate(field_values):
+        timestamp = _tdx_array_timestamp(_value_at(dates, index), _value_at(times, index))
+        if timestamp:
+            series[timestamp] = value
+    return series
+
+
+def _as_sequence(value: Any) -> list[Any]:
+    if isinstance(value, list | tuple):
+        return list(value)
+    return []
+
+
+def _value_at(values: list[Any], index: int) -> Any:
+    if index < len(values):
+        return values[index]
+    return None
+
+
+def _tdx_array_timestamp(date_value: Any, time_value: Any) -> str | None:
+    if date_value is None:
+        return None
+
+    date_text = str(date_value).strip()
+    if len(date_text) == 8 and date_text.isdigit():
+        date_text = f"{date_text[0:4]}-{date_text[4:6]}-{date_text[6:8]}"
+
+    time_text = "" if time_value is None else str(time_value).strip()
+    if not time_text or time_text == "0":
+        return f"{date_text}T00:00:00"
+
+    if time_text.isdigit():
+        if len(time_text) <= 4:
+            digits = time_text.zfill(4)
+            return f"{date_text}T{digits[0:2]}:{digits[2:4]}:00"
+        digits = time_text.zfill(6)
+        return f"{date_text}T{digits[0:2]}:{digits[2:4]}:{digits[4:6]}"
+
+    return f"{date_text}T{time_text}"
 
 
 def _get_native_value(native: dict[str, Any], field_name: str) -> Any:

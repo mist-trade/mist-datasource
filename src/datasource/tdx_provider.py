@@ -87,7 +87,10 @@ class TdxDatasourceProvider:
                 "block_code": sector,
             },
         )
-        return [normalize_symbol(symbol) for symbol in native]
+        members = _unwrap_tdx_value(native)
+        if not isinstance(members, list | tuple):
+            return []
+        return [normalize_symbol(str(symbol)) for symbol in members]
 
     async def call_formula(
         self,
@@ -125,3 +128,12 @@ class TdxDatasourceProvider:
 
     async def aclose(self) -> None:
         await self.client.aclose()
+
+
+def _unwrap_tdx_value(native: Any) -> Any:
+    if not isinstance(native, dict):
+        return native
+    for key, value in native.items():
+        if key.replace("_", "").replace(" ", "").lower() == "value":
+            return value
+    return native

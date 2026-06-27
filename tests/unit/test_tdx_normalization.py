@@ -112,6 +112,36 @@ def test_normalize_bar_rows_outputs_iso_beijing_time_and_numbers():
     assert rows[0].provider == "tdx"
 
 
+def test_normalize_bar_rows_accepts_tdx_http_value_wrapper_arrays():
+    rows = normalize_tdx_bar_rows(
+        symbol="600519.SH",
+        period="1d",
+        native={
+            "ErrorId": "0",
+            "Value": {
+                "600519.SH": {
+                    "Amount": ["586048.13", "592201.44"],
+                    "Close": ["1212.10", "1168.63"],
+                    "Date": ["20260625", "20260626"],
+                    "High": ["1227.00", "1199.00"],
+                    "Low": ["1200.00", "1168.10"],
+                    "Open": ["1207.00", "1199.00"],
+                    "Time": ["0", "0"],
+                    "Volume": ["4844649.00", "5006647.00"],
+                }
+            },
+        },
+    )
+
+    assert len(rows) == 2
+    assert rows[0].symbol == "600519.SH"
+    assert rows[0].barTime == "2026-06-25T00:00:00+08:00"
+    assert rows[0].close == 1212.10
+    assert rows[1].barTime == "2026-06-26T00:00:00+08:00"
+    assert rows[1].close == 1168.63
+    assert rows[1].amount == 592201.44
+
+
 def test_normalize_bar_rows_returns_empty_when_requested_symbol_is_missing():
     rows = normalize_tdx_bar_rows(
         symbol="SZ000001",

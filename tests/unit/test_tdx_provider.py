@@ -131,6 +131,23 @@ async def test_get_sector_members_calls_tdx_sector_method_and_returns_normalized
 
 
 @pytest.mark.asyncio
+async def test_get_sector_members_accepts_tdx_http_value_wrapper():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_stock_list_in_sector": {
+                "ErrorId": "0",
+                "Value": ["600519.SH", "000001.SZ"],
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    members = await provider.get_sector_members("通达信88")
+
+    assert members == ["600519.SH", "000001.SZ"]
+
+
+@pytest.mark.asyncio
 async def test_call_formula_passes_exact_formula_method_with_args_and_context():
     fake_response = {"value": 10.2}
     fake_client = FakeTdxHttpClient({"formula_exp": fake_response})
