@@ -334,6 +334,18 @@ TDX/Backend 的 WinSW 部署。
 .\scripts\deploy_windows.ps1 -Only test
 ```
 
+部署完成并启动 WinSW 服务后，用运行态总入口做一次完整验收：
+
+```powershell
+.\scripts\run-runtime-checks.ps1 -ApplianceRoot F:\quant\MistAPI
+
+# 交易时间强制等待实时 bar
+.\scripts\run-runtime-checks.ps1 -ApplianceRoot F:\quant\MistAPI -RequireLiveBar
+
+# 需要从 datasource 侧重跑安装/临时启动验证时显式开启
+.\scripts\run-runtime-checks.ps1 -RunDatasourceInstall -RunDatasourceStartupTest
+```
+
 **重要提示**：重新启动 TDX 进程前，必须在通达信终端中**手动删除**已注册的策略，否则 `tq.initialize()` 会报 "已有同名策略运行" 导致初始化失败。策略标识为 `sdk_path/mist_datasource.py`。
 
 ## 许可证

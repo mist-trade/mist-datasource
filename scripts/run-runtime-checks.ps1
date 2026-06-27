@@ -1,0 +1,535 @@
+param(
+    [string]$DatasourceDir = "",
+    [string]$ApplianceRoot = "",
+    [string]$EnvFile = "",
+    [string]$BaseUrl = "http://127.0.0.1:9001",
+    [string]$WsUrl = "",
+    [string]$ClientId = "runtime-smoke",
+    [string]$Symbol = "688318.SH",
+    [string]$RawSymbol = "",
+    [string]$Sector = "880081.SH",
+    [string]$Period = "1d",
+    [int]$Count = 2,
+    [int]$TimeoutSeconds = 20,
+    [int]$LiveBarTimeoutSeconds = 60,
+    [switch]$RunDatasourceInstall,
+    [switch]$RunDatasourceStartupTest,
+    [switch]$SkipScriptSelfTest,
+    [switch]$SkipSdkPreflight,
+    [switch]$SkipWinSWProbe,
+    [switch]$SkipApplianceHealth,
+    [switch]$SkipMySQL,
+    [switch]$SkipSmoke,
+    [switch]$SkipWebSocket,
+    [switch]$RequireLiveBar,
+    [switch]$AllowTdxHttpUnavailable
+)
+
+# Optional deployment-side runtime checks:
+#   .\scripts\run-runtime-checks.ps1 -RunDatasourceInstall      # calls deploy_windows.ps1 -Only install
+#   .\scripts\run-runtime-checks.ps1 -RunDatasourceStartupTest  # calls deploy_windows.ps1 -Only test
+
+$ErrorActionPreference = "Stop"
+
+if (-not $DatasourceDir) {
+    $DatasourceDir = $PSScriptRoot | Split-Path -Parent
+}
+$DatasourceDir = [System.IO.Path]::GetFullPath($DatasourceDir)
+
+if (-not $ApplianceRoot) {
+    $candidateRoot = Split-Path $DatasourceDir -Parent
+    if (Test-Path (Join-Path $candidateRoot "health-check.ps1") -PathType Leaf) {
+        $ApplianceRoot = $candidateRoot
+    }
+}
+if ($ApplianceRoot) {
+    $ApplianceRoot = [System.IO.Path]::GetFullPath($ApplianceRoot)
+}
+
+if (-not $EnvFile) {
+    $EnvFile = Join-Path $DatasourceDir ".env"
+}
+
+$BaseUrl = $BaseUrl.TrimEnd("/")
+if (-not $WsUrl) {
+    $httpBase = $BaseUrl -replace "^http://", "ws://" -replace "^https://", "wss://"
+    $WsUrl = "$httpBase/ws/quote/$ClientId"
+}
+
+function Write-Step {
+    param([string]$Message)
+    Write-Host ""
+    Write-Host "===== $Message =====" -ForegroundColor Cyan
+}
+
+function Write-Ok {
+    param([string]$Message)
+    Write-Host "  [OK] $Message" -ForegroundColor Green
+}
+
+function Write-Warn {
+    param([string]$Message)
+    Write-Host "  [WARN] $Message" -ForegroundColor Yellow
+}
+
+function Write-Fail {
+    param([string]$Message)
+    Write-Host "  [FAIL] $Message" -ForegroundColor Red
+}
+
+function ConvertTo-TdxNativeSymbol {
+    param([string]$Symbol)
+
+    $normalized = $Symbol.Trim().ToUpperInvariant()
+    if ($normalized -match "^(?<code>\d{6})\.(?<market>SH|SZ)$") {
+        return "$($Matches.market)$($Matches.code)"
+    }
+    return $normalized
+}
+
+function Get-CurrentPowerShellExe {
+    $path = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    if ($path -and (Test-Path $path -PathType Leaf)) {
+        return $path
+    }
+    return "pwsh"
+}
+
+function Invoke-RuntimeStep {
+    param(
+        [string]$Name,
+        [scriptblock]$Action
+    )
+
+    Write-Step $Name
+    try {
+        & $Action
+        Write-Ok "$Name passed"
+    }
+    catch {
+        Write-Fail "$Name failed: $_"
+        throw
+    }
+}
+
+function Invoke-ChildScript {
+    param(
+        [string]$ScriptPath,
+        [string[]]$Arguments = @(),
+        [switch]$Required
+    )
+
+    if (-not (Test-Path $ScriptPath -PathType Leaf)) {
+        if ($Required) {
+            throw "Required script not found: $ScriptPath"
+        }
+        Write-Warn "Script not found, skipped: $ScriptPath"
+        return
+    }
+
+    $shell = Get-CurrentPowerShellExe
+    Write-Host "  $shell -NoProfile -File $ScriptPath $($Arguments -join ' ')" -ForegroundColor DarkGray
+    & $shell -NoProfile -File $ScriptPath @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "$ScriptPath failed with exit code $LASTEXITCODE"
+    }
+}
+
+function Assert-PropertyExists {
+    param(
+        [object]$Object,
+        [string]$Name
+    )
+
+    if ($null -eq $Object -or -not ($Object.PSObject.Properties.Name -contains $Name)) {
+        throw "Expected property '$Name' was not present."
+    }
+}
+
+function Get-ObjectProperty {
+    param(
+        [object]$Object,
+        [string]$Name
+    )
+
+    if ($null -eq $Object) {
+        return $null
+    }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($property) {
+        return $property.Value
+    }
+    return $null
+}
+
+function Get-NativeProperty {
+    param(
+        [object]$Object,
+        [string]$Name
+    )
+
+    if ($null -eq $Object) {
+        return $null
+    }
+    $expected = $Name.Replace("_", "").ToLowerInvariant()
+    foreach ($property in $Object.PSObject.Properties) {
+        $token = $property.Name.Replace("_", "").ToLowerInvariant()
+        if ($token -eq $expected) {
+            return $property.Value
+        }
+    }
+    return $null
+}
+
+function Assert-EnvelopeOk {
+    param(
+        [object]$Envelope,
+        [string]$Name
+    )
+
+    Assert-PropertyExists -Object $Envelope -Name "ok"
+    if ($Envelope.ok -ne $true) {
+        $errorText = ""
+        if ($Envelope.PSObject.Properties.Name -contains "error") {
+            $errorText = $Envelope.error | ConvertTo-Json -Compress -Depth 8
+        }
+        throw "$Name returned ok=false. $errorText"
+    }
+}
+
+function Assert-ArrayNotEmpty {
+    param(
+        [object]$Value,
+        [string]$Name
+    )
+
+    if ($null -eq $Value -or $Value.Count -lt 1) {
+        throw "$Name must be a non-empty array."
+    }
+}
+
+function Assert-NumericProperty {
+    param(
+        [object]$Object,
+        [string]$Name
+    )
+
+    Assert-PropertyExists -Object $Object -Name $Name
+    $number = 0.0
+    if (-not [double]::TryParse([string](Get-ObjectProperty -Object $Object -Name $Name), [ref]$number)) {
+        throw "Expected property '$Name' to be numeric."
+    }
+}
+
+function Invoke-JsonPost {
+    param(
+        [string]$Uri,
+        [hashtable]$Payload
+    )
+
+    $body = $Payload | ConvertTo-Json -Depth 12 -Compress
+    return Invoke-RestMethod `
+        -Method Post `
+        -Uri $Uri `
+        -ContentType "application/json" `
+        -Body $body `
+        -TimeoutSec $TimeoutSeconds
+}
+
+function Assert-RawMarketDataResult {
+    param(
+        [object]$Result,
+        [string]$Symbol
+    )
+
+    $value = Get-NativeProperty -Object $Result -Name "Value"
+    if ($null -eq $value) {
+        throw "Raw get_market_data result is missing Value."
+    }
+
+    $symbolData = Get-ObjectProperty -Object $value -Name $Symbol
+    if ($null -eq $symbolData -and $value.PSObject.Properties.Count -gt 0) {
+        $symbolData = $value.PSObject.Properties[0].Value
+    }
+    if ($null -eq $symbolData) {
+        throw "Raw get_market_data Value has no symbol rows."
+    }
+
+    foreach ($field in @("Open", "High", "Low", "Close", "Volume", "Amount")) {
+        $series = Get-NativeProperty -Object $symbolData -Name $field
+        Assert-ArrayNotEmpty -Value $series -Name "Raw get_market_data field $field"
+    }
+}
+
+function Assert-RawSnapshotResult {
+    param([object]$Result)
+
+    foreach ($field in @("Now", "LastClose", "Open", "Max", "Min", "Volume", "Amount", "ErrorId")) {
+        $value = Get-NativeProperty -Object $Result -Name $field
+        if ($null -eq $value) {
+            throw "Raw get_market_snapshot result is missing $field."
+        }
+    }
+}
+
+function Test-HealthEndpoint {
+    $health = Invoke-RestMethod -Method Get -Uri "$BaseUrl/health" -TimeoutSec $TimeoutSeconds
+    foreach ($key in @("status", "instance", "adapter", "tdxHttpReachable", "tqInitialized", "collectorState")) {
+        Assert-PropertyExists -Object $health -Name $key
+    }
+    if ($health.tqInitialized -ne $true) {
+        throw "TDX service is not initialized."
+    }
+    if (($health.tdxHttpReachable -ne $true) -and (-not $AllowTdxHttpUnavailable)) {
+        throw "TDX native HTTP is not reachable. Pass -AllowTdxHttpUnavailable to downgrade this check."
+    }
+}
+
+function Test-BasicTdxSmoke {
+    Test-HealthEndpoint
+
+    $rawBars = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/raw/tdx/call" `
+        -Payload @{
+            method = "get_market_data"
+            params = @{
+                stock_list = @($RawSymbol)
+                period = $Period
+                count = $Count
+                dividend_type = "none"
+            }
+        }
+    Assert-EnvelopeOk -Envelope $rawBars -Name "raw get_market_data"
+    Assert-RawMarketDataResult -Result $rawBars.data.result -Symbol $RawSymbol
+
+    $bars = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/bars/query" `
+        -Payload @{ symbols = @($Symbol); period = $Period; count = $Count }
+    Assert-EnvelopeOk -Envelope $bars -Name "normalized bars query"
+    Assert-ArrayNotEmpty -Value $bars.data.bars -Name "normalized bars"
+    foreach ($field in @("open", "high", "low", "close", "volume", "amount")) {
+        Assert-NumericProperty -Object $bars.data.bars[0] -Name $field
+    }
+
+    $rawSnapshot = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/raw/tdx/call" `
+        -Payload @{
+            method = "get_market_snapshot"
+            params = @{
+                stock_code = $RawSymbol
+                field_list = @()
+            }
+        }
+    Assert-EnvelopeOk -Envelope $rawSnapshot -Name "raw get_market_snapshot"
+    Assert-RawSnapshotResult -Result $rawSnapshot.data.result
+
+    $snapshots = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/snapshots/query" `
+        -Payload @{ symbols = @($Symbol) }
+    Assert-EnvelopeOk -Envelope $snapshots -Name "normalized snapshots query"
+    Assert-ArrayNotEmpty -Value $snapshots.data.snapshots -Name "normalized snapshots"
+    foreach ($field in @("last", "open", "high", "low", "lastClose", "volume", "amount", "asOf")) {
+        Assert-PropertyExists -Object $snapshots.data.snapshots[0] -Name $field
+    }
+
+    $sectors = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/sectors/query" `
+        -Payload @{ sector = $Sector }
+    Assert-EnvelopeOk -Envelope $sectors -Name "sector query"
+    Assert-ArrayNotEmpty -Value $sectors.data.symbols -Name "sector symbols"
+}
+
+function Receive-WebSocketText {
+    param(
+        [System.Net.WebSockets.ClientWebSocket]$Socket,
+        [int]$TimeoutSeconds = 15
+    )
+
+    $cts = [System.Threading.CancellationTokenSource]::new()
+    $cts.CancelAfter([TimeSpan]::FromSeconds($TimeoutSeconds))
+    $buffer = [byte[]]::new(4096)
+    $builder = [System.Text.StringBuilder]::new()
+
+    try {
+        do {
+            $segment = [System.ArraySegment[byte]]::new($buffer)
+            $result = $Socket.ReceiveAsync($segment, $cts.Token).GetAwaiter().GetResult()
+            if ($result.MessageType -eq [System.Net.WebSockets.WebSocketMessageType]::Close) {
+                throw "WebSocket closed before the expected message was received."
+            }
+            if ($result.Count -gt 0) {
+                [void]$builder.Append([System.Text.Encoding]::UTF8.GetString($buffer, 0, $result.Count))
+            }
+        } while (-not $result.EndOfMessage)
+    }
+    finally {
+        $cts.Dispose()
+    }
+
+    return $builder.ToString()
+}
+
+function Send-WebSocketJson {
+    param(
+        [System.Net.WebSockets.ClientWebSocket]$Socket,
+        [hashtable]$Payload
+    )
+
+    $json = $Payload | ConvertTo-Json -Depth 12 -Compress
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+    $segment = [System.ArraySegment[byte]]::new($bytes)
+    $Socket.SendAsync(
+        $segment,
+        [System.Net.WebSockets.WebSocketMessageType]::Text,
+        $true,
+        [System.Threading.CancellationToken]::None
+    ).GetAwaiter().GetResult()
+}
+
+function Test-WebSocketSmoke {
+    $socket = [System.Net.WebSockets.ClientWebSocket]::new()
+    try {
+        $connectCts = [System.Threading.CancellationTokenSource]::new()
+        $connectCts.CancelAfter([TimeSpan]::FromSeconds($TimeoutSeconds))
+        $socket.ConnectAsync([Uri]$WsUrl, $connectCts.Token).GetAwaiter().GetResult()
+        $connectCts.Dispose()
+
+        $ready = Receive-WebSocketText -Socket $socket -TimeoutSeconds $TimeoutSeconds | ConvertFrom-Json
+        if ($ready.type -ne "ready") {
+            throw "Expected WebSocket ready message, got: $($ready | ConvertTo-Json -Compress -Depth 8)"
+        }
+
+        Send-WebSocketJson -Socket $socket -Payload @{
+            "type" = "sync_subscriptions"
+            "symbols" = @($Symbol)
+        }
+
+        $subscribed = Receive-WebSocketText -Socket $socket -TimeoutSeconds $TimeoutSeconds | ConvertFrom-Json
+        if ($subscribed.type -ne "subscribed") {
+            throw "Expected WebSocket subscribed message, got: $($subscribed | ConvertTo-Json -Compress -Depth 8)"
+        }
+
+        if ($RequireLiveBar) {
+            $deadline = (Get-Date).AddSeconds($LiveBarTimeoutSeconds)
+            $barSeen = $false
+            while ((Get-Date) -lt $deadline) {
+                $remaining = [Math]::Max(1, [int]($deadline - (Get-Date)).TotalSeconds)
+                $message = Receive-WebSocketText -Socket $socket -TimeoutSeconds $remaining | ConvertFrom-Json
+                if ($message.type -eq "bar") {
+                    $barSeen = $true
+                    break
+                }
+            }
+            if (-not $barSeen) {
+                throw "No live bar event arrived within $LiveBarTimeoutSeconds seconds."
+            }
+        }
+
+        Send-WebSocketJson -Socket $socket -Payload @{
+            "type" = "unsubscribe"
+            "stocks" = @($Symbol)
+        }
+
+        $unsubscribed = Receive-WebSocketText -Socket $socket -TimeoutSeconds $TimeoutSeconds | ConvertFrom-Json
+        if ($unsubscribed.type -ne "unsubscribed") {
+            throw "Expected WebSocket unsubscribed message, got: $($unsubscribed | ConvertTo-Json -Compress -Depth 8)"
+        }
+    }
+    finally {
+        if ($socket.State -eq [System.Net.WebSockets.WebSocketState]::Open) {
+            $socket.CloseAsync(
+                [System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure,
+                "runtime checks complete",
+                [System.Threading.CancellationToken]::None
+            ).GetAwaiter().GetResult()
+        }
+        $socket.Dispose()
+    }
+}
+
+if (-not $RawSymbol) {
+    $RawSymbol = ConvertTo-TdxNativeSymbol -Symbol $Symbol
+}
+
+Write-Host "Mist datasource runtime checks" -ForegroundColor Cyan
+Write-Host "  DatasourceDir: $DatasourceDir"
+Write-Host "  ApplianceRoot: $ApplianceRoot"
+Write-Host "  BaseUrl:       $BaseUrl"
+Write-Host "  WsUrl:         $WsUrl"
+Write-Host "  Symbol:        $Symbol"
+Write-Host "  RawSymbol:     $RawSymbol"
+Write-Host "  Sector:        $Sector"
+
+$selfTestScript = Join-Path $DatasourceDir "scripts\test_windows_scripts.ps1"
+$preflightScript = Join-Path $DatasourceDir "scripts\preflight-sdk.ps1"
+$deployScript = Join-Path $DatasourceDir "scripts\deploy_windows.ps1"
+$winswProbeScript = Join-Path $DatasourceDir "scripts\winsw\test-tdx-datasource.ps1"
+$applianceHealthScript = if ($ApplianceRoot) { Join-Path $ApplianceRoot "health-check.ps1" } else { "" }
+
+try {
+    if (-not $SkipScriptSelfTest) {
+        Invoke-RuntimeStep "Datasource script self-test" {
+            Invoke-ChildScript -ScriptPath $selfTestScript -Required
+        }
+    }
+
+    if (-not $SkipSdkPreflight) {
+        Invoke-RuntimeStep "Datasource SDK preflight" {
+            Invoke-ChildScript -ScriptPath $preflightScript -Arguments @("-EnvFile", $EnvFile) -Required
+        }
+    }
+
+    if ($RunDatasourceInstall) {
+        Invoke-RuntimeStep "Datasource install check" {
+            Invoke-ChildScript -ScriptPath $deployScript -Arguments @("-Only", "install") -Required
+        }
+    }
+
+    if ($RunDatasourceStartupTest) {
+        Invoke-RuntimeStep "Datasource temporary startup check" {
+            Invoke-ChildScript -ScriptPath $deployScript -Arguments @("-Only", "test") -Required
+        }
+    }
+
+    if (-not $SkipWinSWProbe) {
+        Invoke-RuntimeStep "TDX WinSW runtime probe" {
+            Invoke-ChildScript `
+                -ScriptPath $winswProbeScript `
+                -Arguments @("-BaseUrl", $BaseUrl, "-WsUrl", $WsUrl, "-Symbol", $Symbol) `
+                -Required
+        }
+    }
+
+    if (-not $SkipApplianceHealth) {
+        Invoke-RuntimeStep "Appliance health check" {
+            if (-not $applianceHealthScript) {
+                Write-Warn "Appliance root was not resolved; appliance health check skipped."
+                return
+            }
+            $healthArgs = @()
+            if (-not $SkipMySQL) {
+                $healthArgs += "-IncludeMySQL"
+            }
+            Invoke-ChildScript -ScriptPath $applianceHealthScript -Arguments $healthArgs
+        }
+    }
+
+    if (-not $SkipSmoke) {
+        Invoke-RuntimeStep "TDX basic HTTP smoke" {
+            Test-BasicTdxSmoke
+        }
+    }
+
+    if (-not $SkipWebSocket) {
+        Invoke-RuntimeStep "TDX WebSocket smoke" {
+            Test-WebSocketSmoke
+        }
+    }
+}
+catch {
+    Write-Fail "Runtime checks failed."
+    exit 1
+}
+
+Write-Host ""
+Write-Host "All selected runtime checks passed." -ForegroundColor Green

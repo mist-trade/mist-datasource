@@ -58,6 +58,7 @@ Assert-Equal `
 
 $windowsEnvExample = Get-Content (Join-Path $ProjectDir ".env.windows.example") -Raw
 $deployWindows = Get-Content (Join-Path $ProjectDir "scripts\deploy_windows.ps1") -Raw
+$runtimeChecks = Get-Content (Join-Path $ProjectDir "scripts\run-runtime-checks.ps1") -Raw
 $tdxWinswInstall = Get-Content (Join-Path $ProjectDir "scripts\winsw\install-tdx-datasource.ps1") -Raw
 Assert-Match "default TDX SDK path" $windowsEnvExample "TDX_SDK_PATH=F:/quant/tdx/PYPlugins/user"
 Assert-Match "default QMT path" $windowsEnvExample "QMT_PATH=F:/quant/qmt"
@@ -94,6 +95,19 @@ if ($deployWindows -match [regex]::Escape('2>$null | Out-Null')) {
 Write-Host "  [PASS] deploy script keeps uv sync output visible" -ForegroundColor Green
 Assert-Match "TDX WinSW installer accepts started-successfully output" $tdxWinswInstall "started successfully"
 Assert-Match "TDX WinSW installer clears native exit code after success" $tdxWinswInstall '$global:LASTEXITCODE = 0'
+Assert-Match "runtime checks run script self-test" $runtimeChecks "scripts\test_windows_scripts.ps1"
+Assert-Match "runtime checks run SDK preflight" $runtimeChecks "scripts\preflight-sdk.ps1"
+Assert-Match "runtime checks can run datasource deploy install" $runtimeChecks "-Only install"
+Assert-Match "runtime checks can run datasource deploy test" $runtimeChecks "-Only test"
+Assert-Match "runtime checks run WinSW service probe" $runtimeChecks "scripts\winsw\test-tdx-datasource.ps1"
+Assert-Match "runtime checks run appliance health check" $runtimeChecks "health-check.ps1"
+Assert-Match "runtime checks query normalized bars" $runtimeChecks "/v1/bars/query"
+Assert-Match "runtime checks query normalized snapshots" $runtimeChecks "/v1/snapshots/query"
+Assert-Match "runtime checks query sectors" $runtimeChecks "/v1/sectors/query"
+Assert-Match "runtime checks verify raw TDX market data" $runtimeChecks "get_market_data"
+Assert-Match "runtime checks verify raw TDX snapshot" $runtimeChecks "get_market_snapshot"
+Assert-Match "runtime checks support optional live bar wait" $runtimeChecks "RequireLiveBar"
+Assert-Match "runtime checks unsubscribe after websocket smoke" $runtimeChecks '"type" = "unsubscribe"'
 
 Assert-Equal `
     "blank env returns empty string" `
