@@ -8,6 +8,7 @@ param(
     [string]$Symbol = "600519.SH",
     [string]$RawSymbol = "",
     [string]$Sector = "通达信88",
+    [string]$FinanceField = "GO1",
     [string]$Period = "1d",
     [int]$Count = 2,
     [int]$TimeoutSeconds = 20,
@@ -23,6 +24,7 @@ param(
     [switch]$SkipMySQL,
     [switch]$SkipSmoke,
     [switch]$SkipWebSocket,
+    [switch]$IncludeFinanceReportSmoke,
     [switch]$RequireLiveBar,
     [switch]$AllowWebSocketSubscriptionChange,
     [switch]$AllowTdxHttpUnavailable
@@ -406,6 +408,47 @@ function Assert-RawSnapshotResult {
     }
 }
 
+function Assert-RawGpOneDataResult {
+    param(
+        [object]$Result,
+        [string]$Symbol,
+        [string]$Field
+    )
+
+    $containers = @()
+    if ($null -ne $Result) {
+        $containers += $Result
+    }
+
+    $value = Get-NativeProperty -Object $Result -Name "Value"
+    if ($null -ne $value) {
+        $containers += $value
+    }
+
+    foreach ($container in @($containers)) {
+        $fieldData = Get-NativeProperty -Object $container -Name $Field
+        if ($null -ne $fieldData) {
+            $symbolValue = Get-ObjectProperty -Object $fieldData -Name $Symbol
+            if ($null -ne $symbolValue) {
+                return
+            }
+            if ($fieldData.PSObject.Properties.Count -gt 0) {
+                return
+            }
+        }
+
+        $symbolData = Get-ObjectProperty -Object $container -Name $Symbol
+        if ($null -ne $symbolData) {
+            $fieldValue = Get-NativeProperty -Object $symbolData -Name $Field
+            if ($null -ne $fieldValue) {
+                return
+            }
+        }
+    }
+
+    throw "Raw get_gp_one_data result is missing field '$Field' for symbol '$Symbol'."
+}
+
 function Test-HealthEndpoint {
     $health = Invoke-TdxHealthRequest
     foreach ($key in @("status", "instance", "adapter", "tdxHttpReachable", "tqInitialized", "collectorState")) {
@@ -519,6 +562,29 @@ function Test-BasicTdxSmoke {
         -Payload @{ symbols = @($Symbol); fields = @("price", "volume", "amount") }
     Assert-EnvelopeOk -Envelope $priceVolume -Name "price-volume query"
     Assert-ArrayNotEmpty -Value $priceVolume.data.items -Name "price-volume items"
+}
+
+function Test-FinanceReportSmoke {
+    $rawFinance = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/raw/tdx/call" `
+        -Payload @{
+            method = "get_gp_one_data"
+            params = @{
+                stock_list = @($RawSymbol)
+                field_list = @($FinanceField)
+            }
+        }
+    Assert-EnvelopeOk -Envelope $rawFinance -Name "raw get_gp_one_data"
+    Assert-RawGpOneDataResult -Result $rawFinance.data.result -Symbol $RawSymbol -Field $FinanceField
+
+    $finance = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/finance/single-data/query" `
+        -Payload @{ symbols = @($Symbol); fields = @($FinanceField) }
+    Assert-EnvelopeOk -Envelope $finance -Name "single finance data query"
+    Assert-ArrayNotEmpty -Value $finance.data.items -Name "single finance data items"
+    foreach ($field in @("symbol", "field", "value")) {
+        Assert-PropertyExists -Object $finance.data.items[0] -Name $field
+    }
 }
 
 function Receive-WebSocketText {
@@ -654,6 +720,7 @@ Write-Host "  WsUrl:         $WsUrl"
 Write-Host "  Symbol:        $Symbol"
 Write-Host "  RawSymbol:     $RawSymbol"
 Write-Host "  Sector:        $Sector"
+Write-Host "  FinanceField:  $FinanceField"
 
 $selfTestScript = Join-Path $DatasourceDir "scripts\test_windows_scripts.ps1"
 $preflightScript = Join-Path $DatasourceDir "scripts\preflight-sdk.ps1"
@@ -724,6 +791,12 @@ try {
     if (-not $SkipSmoke) {
         Invoke-RuntimeStep "TDX basic HTTP smoke" {
             Test-BasicTdxSmoke
+        }
+    }
+
+    if ($IncludeFinanceReportSmoke) {
+        Invoke-RuntimeStep "TDX finance/report HTTP smoke" {
+            Test-FinanceReportSmoke
         }
     }
 

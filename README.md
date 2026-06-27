@@ -341,13 +341,18 @@ TDX/Backend 的 WinSW 部署。
 # 交易时间强制等待实时 bar；这会改 TDX 订阅，只在 backend 未占用 leader 时使用
 .\scripts\run-runtime-checks.ps1 -ApplianceRoot F:\quant\MistAPI -RequireLiveBar -AllowWebSocketSubscriptionChange
 
+# 加测 Phase 3 财务/报告链路；默认用 get_gp_one_data，适合非交易时段
+.\scripts\run-runtime-checks.ps1 -ApplianceRoot F:\quant\MistAPI -IncludeFinanceReportSmoke
+
 # 需要从 datasource 侧重跑安装/临时启动验证时显式开启
 .\scripts\run-runtime-checks.ps1 -RunDatasourceInstall -RunDatasourceStartupTest
 ```
 
 运行态总入口会检查 datasource health、provider manifest、TDX native HTTP
 shape、normalized bars/snapshots/sectors、Phase 1 calendar/security/sector-list/
-price-volume endpoints、WebSocket ping/pong，以及 appliance health。
+price-volume endpoints、WebSocket ping/pong，以及 appliance health。通过
+`-IncludeFinanceReportSmoke` 可额外检查 Phase 3 finance/report 的 native
+`get_gp_one_data` 与 normalized `/v1/finance/single-data/query`。
 
 `/v1` normalized 请求默认使用 `provider=tdx`。如果显式传
 `provider=qmt`，当前会返回 `PROVIDER_CAPABILITY_UNSUPPORTED`，用于固定

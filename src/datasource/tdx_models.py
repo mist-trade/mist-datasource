@@ -165,6 +165,80 @@ class TdxTrackingEtfsQueryRequest(TdxModel):
     index_symbol: str = Field(alias="indexSymbol")
 
 
+class TdxFinancialDataQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    symbols: list[str]
+    fields: list[str]
+    start_time: str = Field(default="", alias="startTime")
+    end_time: str = Field(default="", alias="endTime")
+    report_type: str = Field(default="report_time", alias="reportType")
+
+
+class TdxFinancialDataByDateQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    symbols: list[str]
+    fields: list[str]
+    year: int = 0
+    mmdd: int = 0
+
+
+class TdxSingleFinanceValueQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    symbols: list[str]
+    fields: list[str]
+
+
+class TdxStockTradeAggregateQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    symbols: list[str]
+    fields: list[str]
+    start_time: str = Field(default="", alias="startTime")
+    end_time: str = Field(default="", alias="endTime")
+
+
+class TdxStockTradeAggregateByDateQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    symbols: list[str]
+    fields: list[str]
+    year: int = 0
+    mmdd: int = 0
+
+
+class TdxSectorTradeAggregateQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    sector_codes: list[str] = Field(alias="sectorCodes")
+    fields: list[str]
+    start_time: str = Field(default="", alias="startTime")
+    end_time: str = Field(default="", alias="endTime")
+
+
+class TdxSectorTradeAggregateByDateQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    sector_codes: list[str] = Field(alias="sectorCodes")
+    fields: list[str]
+    year: int = 0
+    mmdd: int = 0
+
+
+class TdxMarketTradeAggregateQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    fields: list[str]
+    start_time: str = Field(default="", alias="startTime")
+    end_time: str = Field(default="", alias="endTime")
+
+
+class TdxMarketTradeAggregateByDateQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    fields: list[str]
+    year: int = 0
+    mmdd: int = 0
+
+
+class TdxReportDataQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    symbol: str
+
+
 class RawTdxCallRequest(TdxModel):
     method: str
     params: dict[str, Any] = Field(default_factory=dict)

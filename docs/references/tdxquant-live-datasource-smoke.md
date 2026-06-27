@@ -317,6 +317,25 @@ gateway path:
 7. `POST /v1/sectors/query`
    - normalized symbols are returned
 
+### Finance/Report Optional Mode
+
+Run this after basic mode when validating Phase 3 datasource coverage:
+
+```powershell
+.\scripts\run-runtime-checks.ps1 `
+  -ApplianceRoot F:\quant\MistAPI `
+  -IncludeFinanceReportSmoke
+```
+
+The optional probe uses a lightweight `get_gp_one_data` read because it is
+stable outside trading hours:
+
+1. `POST /v1/raw/tdx/call` with `method=get_gp_one_data`
+   - native result contains the requested field for the requested symbol
+2. `POST /v1/finance/single-data/query`
+   - envelope `ok=true`
+   - `data.items` is non-empty and contains `symbol`, `field`, and `value`
+
 ### Live Subscription Mode
 
 Live mode is trading-time sensitive:

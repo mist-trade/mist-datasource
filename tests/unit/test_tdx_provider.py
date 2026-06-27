@@ -460,6 +460,373 @@ async def test_get_tracking_etfs_calls_tdx_trackzs_method():
 
 
 @pytest.mark.asyncio
+async def test_get_financial_data_calls_tdx_method_and_flattens_fields():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_financial_data": {
+                "Value": {
+                    "600519.SH": {
+                        "FN193": "162.47",
+                        "FN194": "69.67",
+                        "announce_time": "20250331",
+                        "tag_time": "20241231",
+                    }
+                }
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_financial_data(
+        ["600519.SH"],
+        ["FN193", "FN194"],
+        "20250101",
+        "20251231",
+        "tag_time",
+    )
+
+    assert items[0]["symbol"] == "600519.SH"
+    assert items[0]["field"] == "FN193"
+    assert items[0]["value"] == 162.47
+    assert items[0]["announceTime"] == "20250331"
+    assert items[0]["tagTime"] == "20241231"
+    assert items[1]["field"] == "FN194"
+    assert fake_client.calls == [
+        (
+            "get_financial_data",
+            {
+                "stock_list": ["600519.SH"],
+                "field_list": ["FN193", "FN194"],
+                "start_time": "20250101",
+                "end_time": "20251231",
+                "report_type": "tag_time",
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_financial_data_by_date_calls_tdx_date_method():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_financial_data_by_date": {
+                "Value": {
+                    "600519.SH": {
+                        "FN193": "162.47",
+                        "tag_time": "20241231",
+                    }
+                }
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_financial_data_by_date(["600519.SH"], ["FN193"], 0, 0)
+
+    assert items[0]["symbol"] == "600519.SH"
+    assert items[0]["value"] == 162.47
+    assert fake_client.calls == [
+        (
+            "get_financial_data_by_date",
+            {
+                "stock_list": ["600519.SH"],
+                "field_list": ["FN193"],
+                "year": 0,
+                "mmdd": 0,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_single_finance_values_calls_gp_one_data_and_flattens_fields():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_gp_one_data": {
+                "Value": {
+                    "GO1": {"688318.SH": "107.41"},
+                    "GO2": {"688318.SH": "3.12"},
+                }
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_single_finance_values(["688318.SH"], ["GO1", "GO2"])
+
+    assert items == [
+        {
+            "symbol": "688318.SH",
+            "field": "GO1",
+            "value": 107.41,
+            "provider": "tdx",
+            "raw": {"GO1": {"688318.SH": "107.41"}, "GO2": {"688318.SH": "3.12"}},
+        },
+        {
+            "symbol": "688318.SH",
+            "field": "GO2",
+            "value": 3.12,
+            "provider": "tdx",
+            "raw": {"GO1": {"688318.SH": "107.41"}, "GO2": {"688318.SH": "3.12"}},
+        },
+    ]
+    assert fake_client.calls == [
+        (
+            "get_gp_one_data",
+            {
+                "stock_list": ["688318.SH"],
+                "field_list": ["GO1", "GO2"],
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_stock_trade_aggregate_calls_tdx_gpjy_value():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_gpjy_value": {
+                "Value": {
+                    "688318.SH": {
+                        "GP3": [{"Date": "20250102", "Value": ["141405.89", "11113.00"]}]
+                    }
+                }
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_stock_trade_aggregate(
+        ["688318.SH"],
+        ["GP3"],
+        "20250101",
+        "20250102",
+    )
+
+    assert items[0]["scope"] == "stock"
+    assert items[0]["code"] == "688318.SH"
+    assert items[0]["field"] == "GP3"
+    assert items[0]["date"] == "20250102"
+    assert items[0]["values"] == [141405.89, 11113.0]
+    assert fake_client.calls == [
+        (
+            "get_gpjy_value",
+            {
+                "stock_list": ["688318.SH"],
+                "field_list": ["GP3"],
+                "start_time": "20250101",
+                "end_time": "20250102",
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_stock_trade_aggregate_by_date_calls_tdx_gpjy_value_by_date():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_gpjy_value_by_date": {
+                "Value": {"688318.SH": {"GP1": ["24154", "0"]}}
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_stock_trade_aggregate_by_date(["688318.SH"], ["GP1"], 0, 0)
+
+    assert items[0]["scope"] == "stock"
+    assert items[0]["values"] == [24154.0, 0.0]
+    assert fake_client.calls == [
+        (
+            "get_gpjy_value_by_date",
+            {
+                "stock_list": ["688318.SH"],
+                "field_list": ["GP1"],
+                "year": 0,
+                "mmdd": 0,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_sector_trade_aggregate_calls_tdx_bkjy_value():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_bkjy_value": {
+                "Value": {
+                    "880660.SH": {
+                        "BK5": [{"Date": "20250102", "Value": ["55.28", "55.50"]}]
+                    }
+                }
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_sector_trade_aggregate(
+        ["880660.SH"],
+        ["BK5"],
+        "20250101",
+        "20250102",
+    )
+
+    assert items[0]["scope"] == "sector"
+    assert items[0]["code"] == "880660.SH"
+    assert items[0]["values"] == [55.28, 55.5]
+    assert fake_client.calls == [
+        (
+            "get_bkjy_value",
+            {
+                "stock_list": ["880660.SH"],
+                "field_list": ["BK5"],
+                "start_time": "20250101",
+                "end_time": "20250102",
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_sector_trade_aggregate_by_date_calls_tdx_bkjy_value_by_date():
+    fake_client = FakeTdxHttpClient(
+        {"get_bkjy_value_by_date": {"Value": {"880660.SH": {"BK9": ["3", "31"]}}}}
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_sector_trade_aggregate_by_date(["880660.SH"], ["BK9"], 0, 0)
+
+    assert items[0]["scope"] == "sector"
+    assert items[0]["values"] == [3.0, 31.0]
+    assert fake_client.calls == [
+        (
+            "get_bkjy_value_by_date",
+            {
+                "stock_list": ["880660.SH"],
+                "field_list": ["BK9"],
+                "year": 0,
+                "mmdd": 0,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_market_trade_aggregate_calls_tdx_scjy_value():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_scjy_value": {
+                "Value": {
+                    "SC1": [{"Date": "20250102", "Value": ["184712288", "999820.06"]}]
+                }
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_market_trade_aggregate(["SC1"], "20250101", "20250102")
+
+    assert items[0]["scope"] == "market"
+    assert items[0]["code"] is None
+    assert items[0]["field"] == "SC1"
+    assert items[0]["date"] == "20250102"
+    assert items[0]["values"] == [184712288.0, 999820.06]
+    assert fake_client.calls == [
+        (
+            "get_scjy_value",
+            {
+                "field_list": ["SC1"],
+                "start_time": "20250101",
+                "end_time": "20250102",
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_market_trade_aggregate_by_date_calls_tdx_scjy_value_by_date():
+    fake_client = FakeTdxHttpClient({"get_scjy_value_by_date": {"Value": {"SC10": ["0", "181415.13"]}}})
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_market_trade_aggregate_by_date(["SC10"], 0, 0)
+
+    assert items[0]["scope"] == "market"
+    assert items[0]["values"] == [0.0, 181415.13]
+    assert fake_client.calls == [
+        (
+            "get_scjy_value_by_date",
+            {
+                "field_list": ["SC10"],
+                "year": 0,
+                "mmdd": 0,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_report_data_calls_tdx_method_and_normalizes_items():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_report_data": {
+                "Value": {
+                    "ReportName": "annual",
+                    "ReportDate": "20241231",
+                    "Summary": "stable",
+                }
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_report_data("600519.SH")
+
+    assert items == [
+        {
+            "symbol": "600519.SH",
+            "field": "ReportName",
+            "value": "annual",
+            "provider": "tdx",
+            "raw": {
+                "ReportName": "annual",
+                "ReportDate": "20241231",
+                "Summary": "stable",
+            },
+        },
+        {
+            "symbol": "600519.SH",
+            "field": "ReportDate",
+            "value": "20241231",
+            "provider": "tdx",
+            "raw": {
+                "ReportName": "annual",
+                "ReportDate": "20241231",
+                "Summary": "stable",
+            },
+        },
+        {
+            "symbol": "600519.SH",
+            "field": "Summary",
+            "value": "stable",
+            "provider": "tdx",
+            "raw": {
+                "ReportName": "annual",
+                "ReportDate": "20241231",
+                "Summary": "stable",
+            },
+        },
+    ]
+    assert fake_client.calls == [
+        (
+            "get_report_data",
+            {
+                "stock_code": "600519.SH",
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_call_formula_passes_exact_formula_method_with_args_and_context():
     fake_response = {"value": 10.2}
     fake_client = FakeTdxHttpClient({"formula_exp": fake_response})

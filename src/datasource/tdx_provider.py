@@ -231,6 +231,172 @@ class TdxDatasourceProvider:
             for item in _native_items(native, "ETFs")
         ]
 
+    async def get_financial_data(
+        self,
+        symbols: list[str],
+        fields: list[str],
+        start_time: str = "",
+        end_time: str = "",
+        report_type: str = "report_time",
+    ) -> list[dict[str, Any]]:
+        tdx_symbols = [to_tdx_http_code(symbol) for symbol in symbols]
+        native = await self.client.call(
+            "get_financial_data",
+            {
+                "stock_list": tdx_symbols,
+                "field_list": fields,
+                "start_time": start_time,
+                "end_time": end_time,
+                "report_type": report_type,
+            },
+        )
+        return _normalize_financial_data_items(tdx_symbols, fields, native)
+
+    async def get_financial_data_by_date(
+        self,
+        symbols: list[str],
+        fields: list[str],
+        year: int = 0,
+        mmdd: int = 0,
+    ) -> list[dict[str, Any]]:
+        tdx_symbols = [to_tdx_http_code(symbol) for symbol in symbols]
+        native = await self.client.call(
+            "get_financial_data_by_date",
+            {
+                "stock_list": tdx_symbols,
+                "field_list": fields,
+                "year": year,
+                "mmdd": mmdd,
+            },
+        )
+        return _normalize_financial_data_items(tdx_symbols, fields, native)
+
+    async def get_single_finance_values(
+        self,
+        symbols: list[str],
+        fields: list[str],
+    ) -> list[dict[str, Any]]:
+        tdx_symbols = [to_tdx_http_code(symbol) for symbol in symbols]
+        native = await self.client.call(
+            "get_gp_one_data",
+            {
+                "stock_list": tdx_symbols,
+                "field_list": fields,
+            },
+        )
+        return _normalize_single_finance_value_items(tdx_symbols, fields, native)
+
+    async def get_stock_trade_aggregate(
+        self,
+        symbols: list[str],
+        fields: list[str],
+        start_time: str = "",
+        end_time: str = "",
+    ) -> list[dict[str, Any]]:
+        tdx_symbols = [to_tdx_http_code(symbol) for symbol in symbols]
+        native = await self.client.call(
+            "get_gpjy_value",
+            {
+                "stock_list": tdx_symbols,
+                "field_list": fields,
+                "start_time": start_time,
+                "end_time": end_time,
+            },
+        )
+        return _normalize_trade_aggregate_items("stock", tdx_symbols, fields, native)
+
+    async def get_stock_trade_aggregate_by_date(
+        self,
+        symbols: list[str],
+        fields: list[str],
+        year: int = 0,
+        mmdd: int = 0,
+    ) -> list[dict[str, Any]]:
+        tdx_symbols = [to_tdx_http_code(symbol) for symbol in symbols]
+        native = await self.client.call(
+            "get_gpjy_value_by_date",
+            {
+                "stock_list": tdx_symbols,
+                "field_list": fields,
+                "year": year,
+                "mmdd": mmdd,
+            },
+        )
+        return _normalize_trade_aggregate_items("stock", tdx_symbols, fields, native)
+
+    async def get_sector_trade_aggregate(
+        self,
+        sector_codes: list[str],
+        fields: list[str],
+        start_time: str = "",
+        end_time: str = "",
+    ) -> list[dict[str, Any]]:
+        native = await self.client.call(
+            "get_bkjy_value",
+            {
+                "stock_list": sector_codes,
+                "field_list": fields,
+                "start_time": start_time,
+                "end_time": end_time,
+            },
+        )
+        return _normalize_trade_aggregate_items("sector", sector_codes, fields, native)
+
+    async def get_sector_trade_aggregate_by_date(
+        self,
+        sector_codes: list[str],
+        fields: list[str],
+        year: int = 0,
+        mmdd: int = 0,
+    ) -> list[dict[str, Any]]:
+        native = await self.client.call(
+            "get_bkjy_value_by_date",
+            {
+                "stock_list": sector_codes,
+                "field_list": fields,
+                "year": year,
+                "mmdd": mmdd,
+            },
+        )
+        return _normalize_trade_aggregate_items("sector", sector_codes, fields, native)
+
+    async def get_market_trade_aggregate(
+        self,
+        fields: list[str],
+        start_time: str = "",
+        end_time: str = "",
+    ) -> list[dict[str, Any]]:
+        native = await self.client.call(
+            "get_scjy_value",
+            {
+                "field_list": fields,
+                "start_time": start_time,
+                "end_time": end_time,
+            },
+        )
+        return _normalize_trade_aggregate_items("market", [None], fields, native)
+
+    async def get_market_trade_aggregate_by_date(
+        self,
+        fields: list[str],
+        year: int = 0,
+        mmdd: int = 0,
+    ) -> list[dict[str, Any]]:
+        native = await self.client.call(
+            "get_scjy_value_by_date",
+            {
+                "field_list": fields,
+                "year": year,
+                "mmdd": mmdd,
+            },
+        )
+        return _normalize_trade_aggregate_items("market", [None], fields, native)
+
+    async def get_report_data(self, symbol: str) -> list[dict[str, Any]]:
+        tdx_symbol = to_tdx_http_code(symbol)
+        native = await self.client.call("get_report_data", {"stock_code": tdx_symbol})
+        return _normalize_report_data_items(tdx_symbol, native)
+
     async def raw_call(self, method: str, params: dict[str, Any] | list[Any] | None = None) -> Any:
         return await self.client.call(method, params)
 
@@ -544,6 +710,126 @@ def _normalize_tracking_etf_item(index_symbol: str, item: Any) -> dict[str, Any]
     }
 
 
+def _normalize_financial_data_items(
+    symbols: list[str],
+    fields: list[str],
+    native: Any,
+) -> list[dict[str, Any]]:
+    values = _unwrap_tdx_value(native)
+    items: list[dict[str, Any]] = []
+
+    for symbol in symbols:
+        raw_record = _record_for_code(values, symbol)
+        for field_name in fields:
+            field_value = _lookup_symbol_field(values, symbol, field_name)
+            if field_value is None:
+                continue
+            items.append(
+                {
+                    "symbol": normalize_symbol(symbol),
+                    "field": field_name,
+                    "value": _scalar_value(field_value),
+                    "announceTime": _metadata_value(raw_record, "announce_time"),
+                    "tagTime": _metadata_value(raw_record, "tag_time"),
+                    "provider": "tdx",
+                    "raw": raw_record,
+                }
+            )
+
+    return items
+
+
+def _normalize_single_finance_value_items(
+    symbols: list[str],
+    fields: list[str],
+    native: Any,
+) -> list[dict[str, Any]]:
+    values = _unwrap_tdx_value(native)
+    items: list[dict[str, Any]] = []
+    for symbol in symbols:
+        for field_name in fields:
+            field_value = _lookup_symbol_field(values, symbol, field_name)
+            if field_value is None:
+                continue
+            items.append(
+                {
+                    "symbol": normalize_symbol(symbol),
+                    "field": field_name,
+                    "value": _scalar_value(field_value),
+                    "provider": "tdx",
+                    "raw": values,
+                }
+            )
+    return items
+
+
+def _normalize_trade_aggregate_items(
+    scope: str,
+    codes: list[str | None],
+    fields: list[str],
+    native: Any,
+) -> list[dict[str, Any]]:
+    values = _unwrap_tdx_value(native)
+    items: list[dict[str, Any]] = []
+    for code in codes:
+        for field_name in fields:
+            native_value = _lookup_aggregate_value(values, code, field_name)
+            if native_value is None:
+                continue
+            for event in _aggregate_events(native_value):
+                date, raw_values = _aggregate_event_parts(event)
+                items.append(
+                    {
+                        "scope": scope,
+                        "code": _normalize_aggregate_code(scope, code),
+                        "field": field_name,
+                        "date": str(date) if date is not None else None,
+                        "values": _numeric_values(raw_values),
+                        "provider": "tdx",
+                        "raw": event,
+                    }
+                )
+    return items
+
+
+def _normalize_report_data_items(symbol: str, native: Any) -> list[dict[str, Any]]:
+    values = _unwrap_tdx_value(native)
+    normalized_symbol = normalize_symbol(symbol)
+    if isinstance(values, dict):
+        return [
+            {
+                "symbol": normalized_symbol,
+                "field": str(field_name),
+                "value": value,
+                "provider": "tdx",
+                "raw": values,
+            }
+            for field_name, value in values.items()
+        ]
+    if isinstance(values, list | tuple):
+        return [
+            {
+                "symbol": normalized_symbol,
+                "field": str(index),
+                "value": item,
+                "provider": "tdx",
+                "raw": values,
+            }
+            for index, item in enumerate(values)
+        ]
+    if values is None:
+        return []
+    return [
+        {
+            "symbol": normalized_symbol,
+            "field": "value",
+            "value": values,
+            "provider": "tdx",
+            "raw": values,
+        }
+    ]
+
+
 def _native_items(native: Any, *preferred_list_fields: str) -> list[Any]:
     values = _unwrap_tdx_value(native)
     if isinstance(values, list | tuple):
@@ -582,6 +868,130 @@ def _as_sequence(value: Any) -> list[Any]:
     if isinstance(value, list | tuple):
         return list(value)
     return [value]
+
+
+def _record_for_code(values: Any, code: str | None) -> Any:
+    if code is None:
+        return values if isinstance(values, dict) else {}
+    if not isinstance(values, dict):
+        return values
+
+    candidates = _code_candidates(code)
+    for key, value in values.items():
+        if str(key).upper() in candidates:
+            return value
+    return values
+
+
+def _lookup_symbol_field(values: Any, symbol: str, field_name: str) -> Any:
+    if not isinstance(values, dict):
+        return values
+
+    symbol_record = _record_for_code(values, symbol)
+    if isinstance(symbol_record, dict):
+        direct_value = _first_native_value(symbol_record, field_name)
+        if direct_value is not None:
+            if symbol_record is values and isinstance(direct_value, dict):
+                nested_value = _record_for_code(direct_value, symbol)
+                if nested_value is not direct_value:
+                    return nested_value
+            return direct_value
+
+    field_record = _first_native_value(values, field_name)
+    if isinstance(field_record, dict):
+        symbol_value = _record_for_code(field_record, symbol)
+        if symbol_value is not field_record:
+            return symbol_value
+
+    if symbol_record is not values:
+        return symbol_record
+    return _first_native_value(values, field_name)
+
+
+def _lookup_aggregate_value(values: Any, code: str | None, field_name: str) -> Any:
+    if not isinstance(values, dict):
+        return values
+    if code is None:
+        return _first_native_value(values, field_name)
+
+    code_record = _record_for_code(values, code)
+    if isinstance(code_record, dict):
+        direct_value = _first_native_value(code_record, field_name)
+        if direct_value is not None:
+            return direct_value
+
+    field_record = _first_native_value(values, field_name)
+    if isinstance(field_record, dict):
+        code_value = _record_for_code(field_record, code)
+        if code_value is not field_record:
+            return code_value
+    return None
+
+
+def _code_candidates(code: str) -> set[str]:
+    return {
+        str(code).upper(),
+        normalize_symbol(str(code)).upper(),
+        to_tdx_code(str(code)).upper(),
+    }
+
+
+def _metadata_value(record: Any, field_name: str) -> str | None:
+    if not isinstance(record, dict):
+        return None
+    value = _first_native_value(record, field_name)
+    return str(value) if value is not None else None
+
+
+def _scalar_value(value: Any) -> Any:
+    if isinstance(value, list | tuple):
+        return [_scalar_value(item) for item in value]
+    if isinstance(value, dict):
+        return value
+    numeric_value = _optional_float(value)
+    if numeric_value is not None:
+        return numeric_value
+    return value
+
+
+def _aggregate_events(value: Any) -> list[Any]:
+    if isinstance(value, list | tuple):
+        if not value:
+            return []
+        if any(isinstance(item, dict) for item in value):
+            return list(value)
+        return [value]
+    return [value]
+
+
+def _aggregate_event_parts(event: Any) -> tuple[Any | None, Any]:
+    if isinstance(event, dict):
+        date = _first_native_value(event, "Date", "date")
+        raw_values = _first_native_value(event, "Value", "value", "values")
+        if raw_values is None:
+            raw_values = {
+                key: value
+                for key, value in event.items()
+                if str(key).replace("_", "").lower() != "date"
+            }
+        return date, raw_values
+    return None, event
+
+
+def _normalize_aggregate_code(scope: str, code: str | None) -> str | None:
+    if code is None:
+        return None
+    if scope == "stock":
+        return normalize_symbol(code)
+    return str(code)
+
+
+def _numeric_values(value: Any) -> list[Any]:
+    if isinstance(value, list | tuple):
+        return [_scalar_value(item) for item in value]
+    if isinstance(value, dict):
+        return [_scalar_value(item) for item in value.values()]
+    return [_scalar_value(value)]
 
 
 def _first_native_value(native: dict[str, Any], *field_names: str) -> Any:

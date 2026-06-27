@@ -25,6 +25,16 @@ class FakeTdxProvider:
         self.dividend_factor_queries: list[tuple[str, str | None, str | None]] = []
         self.convertible_bond_queries: list[tuple[str, list[str] | None, str]] = []
         self.track_etf_queries: list[str] = []
+        self.financial_data_queries: list[tuple[list[str], list[str], str, str, str]] = []
+        self.financial_data_by_date_queries: list[tuple[list[str], list[str], int, int]] = []
+        self.single_finance_value_queries: list[tuple[list[str], list[str]]] = []
+        self.stock_trade_aggregate_queries: list[tuple[list[str], list[str], str, str]] = []
+        self.stock_trade_aggregate_by_date_queries: list[tuple[list[str], list[str], int, int]] = []
+        self.sector_trade_aggregate_queries: list[tuple[list[str], list[str], str, str]] = []
+        self.sector_trade_aggregate_by_date_queries: list[tuple[list[str], list[str], int, int]] = []
+        self.market_trade_aggregate_queries: list[tuple[list[str], str, str]] = []
+        self.market_trade_aggregate_by_date_queries: list[tuple[list[str], int, int]] = []
+        self.report_data_queries: list[str] = []
         self.formula_calls: list[tuple[str, Any, Any]] = []
         self.fail_bars = False
 
@@ -246,6 +256,181 @@ class FakeTdxProvider:
             }
         ]
 
+    async def get_financial_data(
+        self,
+        symbols: list[str],
+        fields: list[str],
+        start_time: str,
+        end_time: str,
+        report_type: str,
+    ) -> list[dict[str, Any]]:
+        self.financial_data_queries.append((symbols, fields, start_time, end_time, report_type))
+        return [
+            {
+                "symbol": symbols[0],
+                "field": fields[0],
+                "value": 162.47,
+                "announceTime": "20250331",
+                "tagTime": "20241231",
+                "provider": "tdx",
+            }
+        ]
+
+    async def get_financial_data_by_date(
+        self,
+        symbols: list[str],
+        fields: list[str],
+        year: int,
+        mmdd: int,
+    ) -> list[dict[str, Any]]:
+        self.financial_data_by_date_queries.append((symbols, fields, year, mmdd))
+        return [
+            {
+                "symbol": symbols[0],
+                "field": fields[0],
+                "value": 69.67,
+                "provider": "tdx",
+            }
+        ]
+
+    async def get_single_finance_values(
+        self,
+        symbols: list[str],
+        fields: list[str],
+    ) -> list[dict[str, Any]]:
+        self.single_finance_value_queries.append((symbols, fields))
+        return [
+            {
+                "symbol": symbols[0],
+                "field": fields[0],
+                "value": 107.41,
+                "provider": "tdx",
+            }
+        ]
+
+    async def get_stock_trade_aggregate(
+        self,
+        symbols: list[str],
+        fields: list[str],
+        start_time: str,
+        end_time: str,
+    ) -> list[dict[str, Any]]:
+        self.stock_trade_aggregate_queries.append((symbols, fields, start_time, end_time))
+        return [
+            {
+                "scope": "stock",
+                "code": symbols[0],
+                "field": fields[0],
+                "date": "20250102",
+                "values": [141405.89, 11113.0],
+                "provider": "tdx",
+            }
+        ]
+
+    async def get_stock_trade_aggregate_by_date(
+        self,
+        symbols: list[str],
+        fields: list[str],
+        year: int,
+        mmdd: int,
+    ) -> list[dict[str, Any]]:
+        self.stock_trade_aggregate_by_date_queries.append((symbols, fields, year, mmdd))
+        return [
+            {
+                "scope": "stock",
+                "code": symbols[0],
+                "field": fields[0],
+                "date": None,
+                "values": [24154.0, 0.0],
+                "provider": "tdx",
+            }
+        ]
+
+    async def get_sector_trade_aggregate(
+        self,
+        sector_codes: list[str],
+        fields: list[str],
+        start_time: str,
+        end_time: str,
+    ) -> list[dict[str, Any]]:
+        self.sector_trade_aggregate_queries.append((sector_codes, fields, start_time, end_time))
+        return [
+            {
+                "scope": "sector",
+                "code": sector_codes[0],
+                "field": fields[0],
+                "date": "20250102",
+                "values": [55.28, 55.5],
+                "provider": "tdx",
+            }
+        ]
+
+    async def get_sector_trade_aggregate_by_date(
+        self,
+        sector_codes: list[str],
+        fields: list[str],
+        year: int,
+        mmdd: int,
+    ) -> list[dict[str, Any]]:
+        self.sector_trade_aggregate_by_date_queries.append((sector_codes, fields, year, mmdd))
+        return [
+            {
+                "scope": "sector",
+                "code": sector_codes[0],
+                "field": fields[0],
+                "date": None,
+                "values": [3.0, 31.0],
+                "provider": "tdx",
+            }
+        ]
+
+    async def get_market_trade_aggregate(
+        self,
+        fields: list[str],
+        start_time: str,
+        end_time: str,
+    ) -> list[dict[str, Any]]:
+        self.market_trade_aggregate_queries.append((fields, start_time, end_time))
+        return [
+            {
+                "scope": "market",
+                "code": None,
+                "field": fields[0],
+                "date": "20250102",
+                "values": [184712288.0, 999820.06],
+                "provider": "tdx",
+            }
+        ]
+
+    async def get_market_trade_aggregate_by_date(
+        self,
+        fields: list[str],
+        year: int,
+        mmdd: int,
+    ) -> list[dict[str, Any]]:
+        self.market_trade_aggregate_by_date_queries.append((fields, year, mmdd))
+        return [
+            {
+                "scope": "market",
+                "code": None,
+                "field": fields[0],
+                "date": None,
+                "values": [0.0, 181415.13],
+                "provider": "tdx",
+            }
+        ]
+
+    async def get_report_data(self, symbol: str) -> list[dict[str, Any]]:
+        self.report_data_queries.append(symbol)
+        return [
+            {
+                "symbol": symbol,
+                "field": "report",
+                "value": "annual",
+                "provider": "tdx",
+            }
+        ]
+
     async def call_formula(
         self,
         name: str,
@@ -362,8 +547,16 @@ async def test_providers_returns_tdx_and_qmt_capability_manifests(
     assert tdx_families["dividend-factors"] == "supported"
     assert tdx_families["convertible-bonds"] == "supported"
     assert tdx_families["etf-info"] == "supported"
+    assert tdx_families["financial-data"] == "supported"
+    assert tdx_families["single-finance-value"] == "supported"
+    assert tdx_families["stock-trade-aggregate"] == "supported"
+    assert tdx_families["sector-trade-aggregate"] == "supported"
+    assert tdx_families["market-trade-aggregate"] == "supported"
+    assert tdx_families["report-data"] == "supported"
     assert tdx_families["formulas"] == "planned"
     assert qmt_families["bars"] in {"supported", "planned", "unsupported"}
+    assert qmt_families["financial-data"] == "unsupported"
+    assert qmt_families["report-data"] == "unsupported"
     assert qmt_families["formulas"] == "unsupported"
 
 
@@ -435,6 +628,66 @@ async def test_providers_returns_tdx_and_qmt_capability_manifests(
             {"provider": "qmt", "indexSymbol": "950162.CSI"},
             "etf-info",
             "instruments/tracking-etfs/query",
+        ),
+        (
+            "/v1/finance/financial-data/query",
+            {"provider": "qmt", "symbols": ["600519.SH"], "fields": ["FN193"]},
+            "financial-data",
+            "finance/financial-data/query",
+        ),
+        (
+            "/v1/finance/financial-data/by-date/query",
+            {"provider": "qmt", "symbols": ["600519.SH"], "fields": ["FN193"]},
+            "financial-data",
+            "finance/financial-data/by-date/query",
+        ),
+        (
+            "/v1/finance/single-data/query",
+            {"provider": "qmt", "symbols": ["688318.SH"], "fields": ["GO1"]},
+            "single-finance-value",
+            "finance/single-data/query",
+        ),
+        (
+            "/v1/reports/stock-trade/query",
+            {"provider": "qmt", "symbols": ["688318.SH"], "fields": ["GP3"]},
+            "stock-trade-aggregate",
+            "reports/stock-trade/query",
+        ),
+        (
+            "/v1/reports/stock-trade/by-date/query",
+            {"provider": "qmt", "symbols": ["688318.SH"], "fields": ["GP1"]},
+            "stock-trade-aggregate",
+            "reports/stock-trade/by-date/query",
+        ),
+        (
+            "/v1/reports/sector-trade/query",
+            {"provider": "qmt", "sectorCodes": ["880660.SH"], "fields": ["BK5"]},
+            "sector-trade-aggregate",
+            "reports/sector-trade/query",
+        ),
+        (
+            "/v1/reports/sector-trade/by-date/query",
+            {"provider": "qmt", "sectorCodes": ["880660.SH"], "fields": ["BK9"]},
+            "sector-trade-aggregate",
+            "reports/sector-trade/by-date/query",
+        ),
+        (
+            "/v1/reports/market-trade/query",
+            {"provider": "qmt", "fields": ["SC1"]},
+            "market-trade-aggregate",
+            "reports/market-trade/query",
+        ),
+        (
+            "/v1/reports/market-trade/by-date/query",
+            {"provider": "qmt", "fields": ["SC10"]},
+            "market-trade-aggregate",
+            "reports/market-trade/by-date/query",
+        ),
+        (
+            "/v1/reports/data/query",
+            {"provider": "qmt", "symbol": "600519.SH"},
+            "report-data",
+            "reports/data/query",
         ),
     ],
 )
@@ -729,6 +982,211 @@ async def test_instruments_tracking_etfs_query_returns_normalized_items(
     assert body["ok"] is True
     assert body["data"]["items"][0]["indexSymbol"] == "950162.CSI"
     assert tdx.main.tdx_provider.track_etf_queries == ["950162.CSI"]
+
+
+@pytest.mark.asyncio
+async def test_financial_data_query_returns_normalized_items(v1_client: AsyncClient) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/finance/financial-data/query",
+        json={
+            "symbols": ["600519.SH"],
+            "fields": ["FN193"],
+            "startTime": "20250101",
+            "endTime": "20251231",
+            "reportType": "tag_time",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["items"][0]["symbol"] == "600519.SH"
+    assert body["data"]["items"][0]["field"] == "FN193"
+    assert body["data"]["items"][0]["value"] == 162.47
+    assert tdx.main.tdx_provider.financial_data_queries == [
+        (["600519.SH"], ["FN193"], "20250101", "20251231", "tag_time")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_financial_data_by_date_query_returns_normalized_items(
+    v1_client: AsyncClient,
+) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/finance/financial-data/by-date/query",
+        json={"symbols": ["600519.SH"], "fields": ["FN194"], "year": 0, "mmdd": 0},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["items"][0]["field"] == "FN194"
+    assert body["data"]["items"][0]["value"] == 69.67
+    assert tdx.main.tdx_provider.financial_data_by_date_queries == [
+        (["600519.SH"], ["FN194"], 0, 0)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_single_finance_data_query_returns_normalized_items(
+    v1_client: AsyncClient,
+) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/finance/single-data/query",
+        json={"symbols": ["688318.SH"], "fields": ["GO1"]},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["items"][0]["field"] == "GO1"
+    assert body["data"]["items"][0]["value"] == 107.41
+    assert tdx.main.tdx_provider.single_finance_value_queries == [
+        (["688318.SH"], ["GO1"])
+    ]
+
+
+@pytest.mark.asyncio
+async def test_stock_trade_aggregate_query_returns_normalized_items(
+    v1_client: AsyncClient,
+) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/reports/stock-trade/query",
+        json={
+            "symbols": ["688318.SH"],
+            "fields": ["GP3"],
+            "startTime": "20250101",
+            "endTime": "20250102",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["items"][0]["scope"] == "stock"
+    assert body["data"]["items"][0]["values"] == [141405.89, 11113.0]
+    assert tdx.main.tdx_provider.stock_trade_aggregate_queries == [
+        (["688318.SH"], ["GP3"], "20250101", "20250102")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_stock_trade_aggregate_by_date_query_returns_normalized_items(
+    v1_client: AsyncClient,
+) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/reports/stock-trade/by-date/query",
+        json={"symbols": ["688318.SH"], "fields": ["GP1"], "year": 0, "mmdd": 0},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["items"][0]["values"] == [24154.0, 0.0]
+    assert tdx.main.tdx_provider.stock_trade_aggregate_by_date_queries == [
+        (["688318.SH"], ["GP1"], 0, 0)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sector_trade_aggregate_query_returns_normalized_items(
+    v1_client: AsyncClient,
+) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/reports/sector-trade/query",
+        json={
+            "sectorCodes": ["880660.SH"],
+            "fields": ["BK5"],
+            "startTime": "20250101",
+            "endTime": "20250102",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["items"][0]["scope"] == "sector"
+    assert tdx.main.tdx_provider.sector_trade_aggregate_queries == [
+        (["880660.SH"], ["BK5"], "20250101", "20250102")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sector_trade_aggregate_by_date_query_returns_normalized_items(
+    v1_client: AsyncClient,
+) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/reports/sector-trade/by-date/query",
+        json={"sectorCodes": ["880660.SH"], "fields": ["BK9"], "year": 0, "mmdd": 0},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["items"][0]["values"] == [3.0, 31.0]
+    assert tdx.main.tdx_provider.sector_trade_aggregate_by_date_queries == [
+        (["880660.SH"], ["BK9"], 0, 0)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_market_trade_aggregate_query_returns_normalized_items(
+    v1_client: AsyncClient,
+) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/reports/market-trade/query",
+        json={"fields": ["SC1"], "startTime": "20250101", "endTime": "20250102"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["items"][0]["scope"] == "market"
+    assert tdx.main.tdx_provider.market_trade_aggregate_queries == [
+        (["SC1"], "20250101", "20250102")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_market_trade_aggregate_by_date_query_returns_normalized_items(
+    v1_client: AsyncClient,
+) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/reports/market-trade/by-date/query",
+        json={"fields": ["SC10"], "year": 0, "mmdd": 0},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["items"][0]["values"] == [0.0, 181415.13]
+    assert tdx.main.tdx_provider.market_trade_aggregate_by_date_queries == [
+        (["SC10"], 0, 0)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_report_data_query_returns_normalized_items(v1_client: AsyncClient) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/reports/data/query",
+        json={"symbol": "600519.SH"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["items"][0]["symbol"] == "600519.SH"
+    assert tdx.main.tdx_provider.report_data_queries == ["600519.SH"]
 
 
 @pytest.mark.asyncio

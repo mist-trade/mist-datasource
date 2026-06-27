@@ -107,3 +107,26 @@ The root-level `TDX.md` and `QMT.md` snapshots were removed as stale. Future
 shape changes should be captured here or in the coverage matrix after checking
 current official pages. Convertible-bond and ETF live return shapes still need
 Windows smoke confirmation before backend product code relies on narrow fields.
+
+## Phase 3 Normalized Endpoint Capture
+
+Implemented after this capture using the reviewed official pages and coverage
+matrix:
+
+| Normalized endpoint | Primary TDX methods |
+| --- | --- |
+| `/v1/finance/financial-data/query` | `get_financial_data` |
+| `/v1/finance/financial-data/by-date/query` | `get_financial_data_by_date` |
+| `/v1/finance/single-data/query` | `get_gp_one_data` |
+| `/v1/reports/stock-trade/query` | `get_gpjy_value` |
+| `/v1/reports/stock-trade/by-date/query` | `get_gpjy_value_by_date` |
+| `/v1/reports/sector-trade/query` | `get_bkjy_value` |
+| `/v1/reports/sector-trade/by-date/query` | `get_bkjy_value_by_date` |
+| `/v1/reports/market-trade/query` | `get_scjy_value` |
+| `/v1/reports/market-trade/by-date/query` | `get_scjy_value_by_date` |
+| `/v1/reports/data/query` | `get_report_data` |
+
+The runtime smoke script includes optional `-IncludeFinanceReportSmoke`, which
+uses `get_gp_one_data` plus `/v1/finance/single-data/query` as a lightweight
+outside-trading-hours probe. Narrow report fields still need Windows smoke
+confirmation before backend product code relies on them.

@@ -64,16 +64,16 @@ Related references:
 
 | TDX method | Source | Classification | Endpoint family | QMT alignment | Test strategy |
 | --- | --- | --- | --- | --- | --- |
-| `get_financial_data` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10m001ic888.html> | `normalized-phase-3` | `financial-data` | QMT equivalent unknown; manifest explicit. | Fixture and normalized statement/field model. |
-| `get_financial_data_by_date` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10mdt617qss.html> | `normalized-phase-3` | `financial-data` | QMT equivalent unknown. | Date-specific fixture and response model. |
-| `get_gp_one_data` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10pk3rsg044.html> | `normalized-phase-3` | `single-finance-value` | QMT equivalent unknown. | Fixture with numeric coercion. |
-| `get_gpjy_value` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10muc82r55k.html> | `normalized-phase-3` | `stock-trade-aggregate` | QMT equivalent unknown. | Fixture and date/market normalization. |
-| `get_gpjy_value_by_date` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h2pci5gh6h7k.html> | `normalized-phase-3` | `stock-trade-aggregate` | QMT equivalent unknown. | Date-specific fixture. |
-| `get_bkjy_value` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10p0ncmp5mc.html> | `normalized-phase-3` | `sector-trade-aggregate` | QMT equivalent unknown. | Fixture and sector mapping. |
-| `get_bkjy_value_by_date` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10p3d31736g.html> | `normalized-phase-3` | `sector-trade-aggregate` | QMT equivalent unknown. | Date-specific fixture. |
-| `get_scjy_value` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10p8op6ia9g.html> | `normalized-phase-3` | `market-trade-aggregate` | QMT equivalent unknown. | Fixture and market mapping. |
-| `get_scjy_value_by_date` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10pe678ta04.html> | `normalized-phase-3` | `market-trade-aggregate` | QMT equivalent unknown. | Date-specific fixture. |
-| `get_report_data` | Official docs content; no stable nav page found in route scrape. | `normalized-phase-3` after live verification | `report-data` | QMT equivalent unknown. | Live probe first, then fixture. |
+| `get_financial_data` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10m001ic888.html> | `normalized-now` | `financial-data` via `/v1/finance/financial-data/query` | QMT returns unsupported until mapping is verified. | Fixture and normalized statement/field model. |
+| `get_financial_data_by_date` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10mdt617qss.html> | `normalized-now` | `financial-data` via `/v1/finance/financial-data/by-date/query` | QMT returns unsupported until mapping is verified. | Date-specific fixture and response model. |
+| `get_gp_one_data` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10pk3rsg044.html> | `normalized-now` | `single-finance-value` via `/v1/finance/single-data/query` | QMT returns unsupported until mapping is verified. | Fixture with numeric coercion; optional runtime smoke uses this lightweight probe. |
+| `get_gpjy_value` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10muc82r55k.html> | `normalized-now` | `stock-trade-aggregate` via `/v1/reports/stock-trade/query` | QMT returns unsupported until mapping is verified. | Fixture and date/market normalization. |
+| `get_gpjy_value_by_date` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h2pci5gh6h7k.html> | `normalized-now` | `stock-trade-aggregate` via `/v1/reports/stock-trade/by-date/query` | QMT returns unsupported until mapping is verified. | Date-specific fixture. |
+| `get_bkjy_value` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10p0ncmp5mc.html> | `normalized-now` | `sector-trade-aggregate` via `/v1/reports/sector-trade/query` | QMT returns unsupported until mapping is verified. | Fixture and sector mapping. |
+| `get_bkjy_value_by_date` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10p3d31736g.html> | `normalized-now` | `sector-trade-aggregate` via `/v1/reports/sector-trade/by-date/query` | QMT returns unsupported until mapping is verified. | Date-specific fixture. |
+| `get_scjy_value` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10p8op6ia9g.html> | `normalized-now` | `market-trade-aggregate` via `/v1/reports/market-trade/query` | QMT returns unsupported until mapping is verified. | Fixture and market mapping. |
+| `get_scjy_value_by_date` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10pe678ta04.html> | `normalized-now` | `market-trade-aggregate` via `/v1/reports/market-trade/by-date/query` | QMT returns unsupported until mapping is verified. | Date-specific fixture. |
+| `get_report_data` | Official docs content; no stable nav page found in route scrape. | `normalized-now` | `report-data` via `/v1/reports/data/query` | QMT returns unsupported until mapping is verified. | Fixture and live probe before product code relies on narrow report fields. |
 
 ## Phase 4: Formula Data And Execution
 

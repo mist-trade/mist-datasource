@@ -13,14 +13,24 @@ from src.datasource.tdx_models import (
     TdxBarQueryRequest,
     TdxConvertibleBondInfoQueryRequest,
     TdxDividendFactorsQueryRequest,
+    TdxFinancialDataByDateQueryRequest,
+    TdxFinancialDataQueryRequest,
     TdxIpoInfoQueryRequest,
+    TdxMarketTradeAggregateByDateQueryRequest,
+    TdxMarketTradeAggregateQueryRequest,
     TdxPriceVolumeQueryRequest,
+    TdxReportDataQueryRequest,
     TdxSectorListQueryRequest,
+    TdxSectorTradeAggregateByDateQueryRequest,
+    TdxSectorTradeAggregateQueryRequest,
     TdxSecuritiesQueryRequest,
     TdxSecurityInfoQueryRequest,
     TdxSecurityRelationsQueryRequest,
     TdxShareCapitalQueryRequest,
+    TdxSingleFinanceValueQueryRequest,
     TdxSnapshotQueryRequest,
+    TdxStockTradeAggregateByDateQueryRequest,
+    TdxStockTradeAggregateQueryRequest,
     TdxTrackingEtfsQueryRequest,
     TdxTradingDatesQueryRequest,
 )
@@ -386,6 +396,206 @@ async def query_tracking_etfs(payload: TdxTrackingEtfsQueryRequest, request: Req
         provider_id=payload.provider,
         capability_family="etf-info",
         operation_name="instruments/tracking-etfs/query",
+    )
+
+
+@router.post("/v1/finance/financial-data/query")
+async def query_financial_data(payload: TdxFinancialDataQueryRequest, request: Request):
+    return await _call_provider(
+        request,
+        lambda provider: _wrap(
+            "items",
+            provider.get_financial_data(
+                payload.symbols,
+                payload.fields,
+                payload.start_time,
+                payload.end_time,
+                payload.report_type,
+            ),
+        ),
+        provider_id=payload.provider,
+        capability_family="financial-data",
+        operation_name="finance/financial-data/query",
+    )
+
+
+@router.post("/v1/finance/financial-data/by-date/query")
+async def query_financial_data_by_date(
+    payload: TdxFinancialDataByDateQueryRequest,
+    request: Request,
+):
+    return await _call_provider(
+        request,
+        lambda provider: _wrap(
+            "items",
+            provider.get_financial_data_by_date(
+                payload.symbols,
+                payload.fields,
+                payload.year,
+                payload.mmdd,
+            ),
+        ),
+        provider_id=payload.provider,
+        capability_family="financial-data",
+        operation_name="finance/financial-data/by-date/query",
+    )
+
+
+@router.post("/v1/finance/single-data/query")
+async def query_single_finance_data(
+    payload: TdxSingleFinanceValueQueryRequest,
+    request: Request,
+):
+    return await _call_provider(
+        request,
+        lambda provider: _wrap(
+            "items",
+            provider.get_single_finance_values(payload.symbols, payload.fields),
+        ),
+        provider_id=payload.provider,
+        capability_family="single-finance-value",
+        operation_name="finance/single-data/query",
+    )
+
+
+@router.post("/v1/reports/stock-trade/query")
+async def query_stock_trade_aggregate(
+    payload: TdxStockTradeAggregateQueryRequest,
+    request: Request,
+):
+    return await _call_provider(
+        request,
+        lambda provider: _wrap(
+            "items",
+            provider.get_stock_trade_aggregate(
+                payload.symbols,
+                payload.fields,
+                payload.start_time,
+                payload.end_time,
+            ),
+        ),
+        provider_id=payload.provider,
+        capability_family="stock-trade-aggregate",
+        operation_name="reports/stock-trade/query",
+    )
+
+
+@router.post("/v1/reports/stock-trade/by-date/query")
+async def query_stock_trade_aggregate_by_date(
+    payload: TdxStockTradeAggregateByDateQueryRequest,
+    request: Request,
+):
+    return await _call_provider(
+        request,
+        lambda provider: _wrap(
+            "items",
+            provider.get_stock_trade_aggregate_by_date(
+                payload.symbols,
+                payload.fields,
+                payload.year,
+                payload.mmdd,
+            ),
+        ),
+        provider_id=payload.provider,
+        capability_family="stock-trade-aggregate",
+        operation_name="reports/stock-trade/by-date/query",
+    )
+
+
+@router.post("/v1/reports/sector-trade/query")
+async def query_sector_trade_aggregate(
+    payload: TdxSectorTradeAggregateQueryRequest,
+    request: Request,
+):
+    return await _call_provider(
+        request,
+        lambda provider: _wrap(
+            "items",
+            provider.get_sector_trade_aggregate(
+                payload.sector_codes,
+                payload.fields,
+                payload.start_time,
+                payload.end_time,
+            ),
+        ),
+        provider_id=payload.provider,
+        capability_family="sector-trade-aggregate",
+        operation_name="reports/sector-trade/query",
+    )
+
+
+@router.post("/v1/reports/sector-trade/by-date/query")
+async def query_sector_trade_aggregate_by_date(
+    payload: TdxSectorTradeAggregateByDateQueryRequest,
+    request: Request,
+):
+    return await _call_provider(
+        request,
+        lambda provider: _wrap(
+            "items",
+            provider.get_sector_trade_aggregate_by_date(
+                payload.sector_codes,
+                payload.fields,
+                payload.year,
+                payload.mmdd,
+            ),
+        ),
+        provider_id=payload.provider,
+        capability_family="sector-trade-aggregate",
+        operation_name="reports/sector-trade/by-date/query",
+    )
+
+
+@router.post("/v1/reports/market-trade/query")
+async def query_market_trade_aggregate(
+    payload: TdxMarketTradeAggregateQueryRequest,
+    request: Request,
+):
+    return await _call_provider(
+        request,
+        lambda provider: _wrap(
+            "items",
+            provider.get_market_trade_aggregate(
+                payload.fields,
+                payload.start_time,
+                payload.end_time,
+            ),
+        ),
+        provider_id=payload.provider,
+        capability_family="market-trade-aggregate",
+        operation_name="reports/market-trade/query",
+    )
+
+
+@router.post("/v1/reports/market-trade/by-date/query")
+async def query_market_trade_aggregate_by_date(
+    payload: TdxMarketTradeAggregateByDateQueryRequest,
+    request: Request,
+):
+    return await _call_provider(
+        request,
+        lambda provider: _wrap(
+            "items",
+            provider.get_market_trade_aggregate_by_date(
+                payload.fields,
+                payload.year,
+                payload.mmdd,
+            ),
+        ),
+        provider_id=payload.provider,
+        capability_family="market-trade-aggregate",
+        operation_name="reports/market-trade/by-date/query",
+    )
+
+
+@router.post("/v1/reports/data/query")
+async def query_report_data(payload: TdxReportDataQueryRequest, request: Request):
+    return await _call_provider(
+        request,
+        lambda provider: _wrap("items", provider.get_report_data(payload.symbol)),
+        provider_id=payload.provider,
+        capability_family="report-data",
+        operation_name="reports/data/query",
     )
 
 
