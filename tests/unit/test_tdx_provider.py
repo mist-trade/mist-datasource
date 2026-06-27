@@ -282,13 +282,16 @@ async def test_get_trading_dates_normalizes_tdx_date_field():
 
 @pytest.mark.asyncio
 async def test_get_securities_calls_tdx_stock_list_method():
-    fake_client = FakeTdxHttpClient({"get_stock_list": {"Value": ["SH600519"]}})
+    fake_client = FakeTdxHttpClient(
+        {"get_stock_list": {"Value": [{"Code": "SH600519", "Name": "贵州茅台"}]}}
+    )
     provider = TdxDatasourceProvider(fake_client)
 
     securities = await provider.get_securities("5")
 
     assert securities[0]["symbol"] == "600519.SH"
-    assert fake_client.calls == [("get_stock_list", {"market": "5"})]
+    assert securities[0]["name"] == "贵州茅台"
+    assert fake_client.calls == [("get_stock_list", {"market": "5", "list_type": 1})]
 
 
 @pytest.mark.asyncio

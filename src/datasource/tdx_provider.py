@@ -149,7 +149,7 @@ class TdxDatasourceProvider:
         return []
 
     async def get_securities(self, market: str = "5") -> list[dict[str, Any]]:
-        native = await self.client.call("get_stock_list", {"market": market})
+        native = await self.client.call("get_stock_list", {"market": market, "list_type": 1})
         values = _unwrap_tdx_value(native)
         if not isinstance(values, list | tuple):
             return []
