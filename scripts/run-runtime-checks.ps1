@@ -24,6 +24,7 @@ param(
     [switch]$SkipSmoke,
     [switch]$SkipWebSocket,
     [switch]$RequireLiveBar,
+    [switch]$AllowWebSocketSubscriptionChange,
     [switch]$AllowTdxHttpUnavailable
 )
 
@@ -472,7 +473,7 @@ function Send-WebSocketJson {
     $json = $Payload | ConvertTo-Json -Depth 12 -Compress
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
     $segment = [System.ArraySegment[byte]]::new($bytes)
-    $Socket.SendAsync(
+    [void]$Socket.SendAsync(
         $segment,
         [System.Net.WebSockets.WebSocketMessageType]::Text,
         $true,
@@ -485,7 +486,7 @@ function Test-WebSocketSmoke {
     try {
         $connectCts = [System.Threading.CancellationTokenSource]::new()
         $connectCts.CancelAfter([TimeSpan]::FromSeconds($TimeoutSeconds))
-        $socket.ConnectAsync([Uri]$WsUrl, $connectCts.Token).GetAwaiter().GetResult()
+        [void]$socket.ConnectAsync([Uri]$WsUrl, $connectCts.Token).GetAwaiter().GetResult()
         $connectCts.Dispose()
 
         $ready = Receive-WebSocketText -Socket $socket -TimeoutSeconds $TimeoutSeconds | ConvertFrom-Json
@@ -494,16 +495,29 @@ function Test-WebSocketSmoke {
         }
 
         Send-WebSocketJson -Socket $socket -Payload @{
-            "type" = "sync_subscriptions"
-            "symbols" = @($Symbol)
+            "type" = "ping"
         }
 
-        $subscribed = Receive-WebSocketText -Socket $socket -TimeoutSeconds $TimeoutSeconds | ConvertFrom-Json
-        if ($subscribed.type -ne "subscribed") {
-            throw "Expected WebSocket subscribed message, got: $($subscribed | ConvertTo-Json -Compress -Depth 8)"
+        $pong = Receive-WebSocketText -Socket $socket -TimeoutSeconds $TimeoutSeconds | ConvertFrom-Json
+        if ($pong.type -ne "pong") {
+            throw "Expected WebSocket pong message, got: $($pong | ConvertTo-Json -Compress -Depth 8)"
         }
 
         if ($RequireLiveBar) {
+            if (-not $AllowWebSocketSubscriptionChange) {
+                throw "RequireLiveBar needs -AllowWebSocketSubscriptionChange because it changes TDX subscriptions. Do not use it while Mist backend owns the TDX subscription leader."
+            }
+
+            Send-WebSocketJson -Socket $socket -Payload @{
+                "type" = "sync_subscriptions"
+                "symbols" = @($Symbol)
+            }
+
+            $subscribed = Receive-WebSocketText -Socket $socket -TimeoutSeconds $TimeoutSeconds | ConvertFrom-Json
+            if ($subscribed.type -ne "subscribed") {
+                throw "Expected WebSocket subscribed message, got: $($subscribed | ConvertTo-Json -Compress -Depth 8)"
+            }
+
             $deadline = (Get-Date).AddSeconds($LiveBarTimeoutSeconds)
             $barSeen = $false
             while ((Get-Date) -lt $deadline) {
@@ -517,21 +531,21 @@ function Test-WebSocketSmoke {
             if (-not $barSeen) {
                 throw "No live bar event arrived within $LiveBarTimeoutSeconds seconds."
             }
-        }
 
-        Send-WebSocketJson -Socket $socket -Payload @{
-            "type" = "unsubscribe"
-            "stocks" = @($Symbol)
-        }
+            Send-WebSocketJson -Socket $socket -Payload @{
+                "type" = "unsubscribe"
+                "stocks" = @($Symbol)
+            }
 
-        $unsubscribed = Receive-WebSocketText -Socket $socket -TimeoutSeconds $TimeoutSeconds | ConvertFrom-Json
-        if ($unsubscribed.type -ne "unsubscribed") {
-            throw "Expected WebSocket unsubscribed message, got: $($unsubscribed | ConvertTo-Json -Compress -Depth 8)"
+            $unsubscribed = Receive-WebSocketText -Socket $socket -TimeoutSeconds $TimeoutSeconds | ConvertFrom-Json
+            if ($unsubscribed.type -ne "unsubscribed") {
+                throw "Expected WebSocket unsubscribed message, got: $($unsubscribed | ConvertTo-Json -Compress -Depth 8)"
+            }
         }
     }
     finally {
         if ($socket.State -eq [System.Net.WebSockets.WebSocketState]::Open) {
-            $socket.CloseAsync(
+            [void]$socket.CloseAsync(
                 [System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure,
                 "runtime checks complete",
                 [System.Threading.CancellationToken]::None

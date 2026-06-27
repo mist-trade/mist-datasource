@@ -339,8 +339,8 @@ TDX/Backend 的 WinSW 部署。
 ```powershell
 .\scripts\run-runtime-checks.ps1 -ApplianceRoot F:\quant\MistAPI
 
-# 交易时间强制等待实时 bar
-.\scripts\run-runtime-checks.ps1 -ApplianceRoot F:\quant\MistAPI -RequireLiveBar
+# 交易时间强制等待实时 bar；这会改 TDX 订阅，只在 backend 未占用 leader 时使用
+.\scripts\run-runtime-checks.ps1 -ApplianceRoot F:\quant\MistAPI -RequireLiveBar -AllowWebSocketSubscriptionChange
 
 # 需要从 datasource 侧重跑安装/临时启动验证时显式开启
 .\scripts\run-runtime-checks.ps1 -RunDatasourceInstall -RunDatasourceStartupTest

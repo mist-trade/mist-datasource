@@ -99,10 +99,15 @@ Assert-Match "TDX WinSW installer clears native exit code after success" $tdxWin
 Assert-Match "TDX WinSW installer resolves packaged uv" $tdxWinswInstall "Resolve-UvExe"
 Assert-Match "TDX WinSW installer default executable can be resolved" $tdxWinswInstall 'if (-not $Executable)'
 Assert-Match "TDX WinSW smoke uses supported market data method" $tdxWinswSmoke "get_market_data"
+Assert-Match "TDX WinSW smoke uses read-only websocket ping" $tdxWinswSmoke '"type" = "ping"'
 if ($tdxWinswSmoke -match [regex]::Escape('method = "ping"')) {
     throw "TDX WinSW smoke must not call unsupported raw ping."
 }
 Write-Host "  [PASS] TDX WinSW smoke avoids unsupported raw ping" -ForegroundColor Green
+if ($tdxWinswSmoke -match [regex]::Escape('"type" = "sync_subscriptions"')) {
+    throw "TDX WinSW smoke must not change subscriptions when backend owns the TDX leader."
+}
+Write-Host "  [PASS] TDX WinSW smoke avoids subscription mutation" -ForegroundColor Green
 if ($tdxWinswInstall -match [regex]::Escape('("refresh")')) {
     throw "TDX WinSW installer must not call refresh; older bundled WinSW builds do not support it."
 }
@@ -122,6 +127,7 @@ Assert-Match "runtime checks query normalized snapshots" $runtimeChecks "/v1/sna
 Assert-Match "runtime checks query sectors" $runtimeChecks "/v1/sectors/query"
 Assert-Match "runtime checks verify raw TDX market data" $runtimeChecks "get_market_data"
 Assert-Match "runtime checks verify raw TDX snapshot" $runtimeChecks "get_market_snapshot"
+Assert-Match "runtime checks can explicitly allow websocket subscription changes" $runtimeChecks "AllowWebSocketSubscriptionChange"
 Assert-Match "runtime checks support optional live bar wait" $runtimeChecks "RequireLiveBar"
 Assert-Match "runtime checks unsubscribe after websocket smoke" $runtimeChecks '"type" = "unsubscribe"'
 
