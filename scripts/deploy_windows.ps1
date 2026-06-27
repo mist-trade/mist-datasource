@@ -1,22 +1,16 @@
 ﻿# mist-datasource Windows 部署脚本
-# Current appliance installs TDX through WinSW. The service step here is the
-# legacy NSSM service path for manual debugging or rollback only.
+# Current appliance installs TDX through WinSW. This script only installs
+# dependencies and runs temporary startup checks.
 # 用法: 以管理员身份打开 PowerShell, 然后:
 #   cd D:\mist-datasource
 #   .\scripts\deploy_windows.ps1
 #
 # 也可只运行特定步骤:
-#   .\scripts\deploy_windows.ps1 -SkipService      # 只测试, 不注册服务
 #   .\scripts\deploy_windows.ps1 -Only install     # 只运行 install 步骤
 #   .\scripts\deploy_windows.ps1 -Only test        # 只运行 test 步骤
-#   .\scripts\deploy_windows.ps1 -Only service     # only run legacy NSSM service registration
-#   .\scripts\deploy_windows.ps1 -Only service -ServiceInstance qmt
 
 param(
-    [switch]$SkipService,
-    [string]$Only = "",
-    [ValidateSet("all", "tdx", "qmt")]
-    [string]$ServiceInstance = "all"
+    [string]$Only = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -24,21 +18,18 @@ $ProjectDir = $PSScriptRoot | Split-Path -Parent
 $LogsDir = Join-Path $ProjectDir "logs"
 
 . "$PSScriptRoot\windows-common.ps1"
-. "$PSScriptRoot\service-common.ps1"
 
 # ---- 前置检查 ----
-if ($Only -and $Only -notin @("install", "test", "service")) {
-    Write-Fail "Unknown step: $Only. Use: install, test, service"
+if ($Only -and $Only -notin @("install", "test")) {
+    Write-Fail "Unknown step: $Only. Use: install, test"
     exit 1
 }
-$installTdxService = $ServiceInstance -in @("all", "tdx")
-$installQmtService = $ServiceInstance -in @("all", "qmt")
 
 # ============================================
 # Step 1: 环境检查
 # ============================================
 if (-not $Only -or $Only -eq "install") {
-    Write-Step "Step 1/5: 环境检查"
+    Write-Step "Step 1/4: 环境检查"
 
     # 检查 Python
     $pythonExe = $null
@@ -93,24 +84,13 @@ if (-not $Only -or $Only -eq "install") {
         Write-Host "  [INFO] APP_ENV=$appEnv (开发模式, 使用 mock adapter)" -ForegroundColor Yellow
     }
 
-    # 检查 NSSM (legacy NSSM service registration only)
-    if ((-not $SkipService) -and (-not $Only -or $Only -eq "service")) {
-        $nssmExe = Resolve-NssmExe
-        if (-not $nssmExe) {
-            Write-Fail "Legacy NSSM service registration requires nssm.exe. 请下载 nssm.cc 并加入 PATH"
-            Write-Host "  下载地址: https://nssm.cc/download" -ForegroundColor Yellow
-            Write-Host "  或用 -SkipService 跳过服务注册" -ForegroundColor Yellow
-            exit 1
-        }
-        Write-Ok "NSSM: $nssmExe"
-    }
 }
 
 # ============================================
 # Step 2: 安装依赖
 # ============================================
 if (-not $Only -or $Only -eq "install") {
-    Write-Step "Step 2/5: 安装依赖 (uv sync)"
+    Write-Step "Step 2/4: 安装依赖 (uv sync)"
 
     Push-Location $ProjectDir
     try {
@@ -177,7 +157,7 @@ if (-not $Only -or $Only -eq "install") {
 # Step 3: 测试启动
 # ============================================
 if (-not $Only -or $Only -eq "test") {
-    Write-Step "Step 3/5: 测试 TDX 实例启动"
+    Write-Step "Step 3/4: 测试 TDX 实例启动"
 
     $venvPython = Join-Path $ProjectDir ".venv\Scripts\python.exe"
 
@@ -227,14 +207,14 @@ if (-not $Only -or $Only -eq "test") {
         Write-Host "    2. APP_ENV=production -> 检查 TDX_SDK_PATH 是否正确, 通达信终端是否已登录" -ForegroundColor Yellow
         Write-Host "    3. 端口 9001 被占用 -> 关闭占用进程" -ForegroundColor Yellow
         if (-not $Only) {
-            Write-Host "`n  是否继续注册服务? (Y/N)" -ForegroundColor Yellow
+            Write-Host "`n  是否继续测试 QMT? (Y/N)" -ForegroundColor Yellow
             $cont = Read-Host
             if ($cont -ne "Y") { exit 1 }
         }
     }
 
     # 测试 QMT 实例 (仅在配置了 QMT_SDK_PATH 时)
-    Write-Step "Step 4/5: 测试 QMT 实例启动"
+    Write-Step "Step 4/4: 测试 QMT 实例启动"
 
     $qmtSdk = Get-EnvValue $envContent "QMT_SDK_PATH"
     if (-not $qmtSdk -or $qmtSdk -eq "") {
@@ -270,83 +250,6 @@ if (-not $Only -or $Only -eq "test") {
     }
 }
 
-# ============================================
-# Step 5: 注册 legacy NSSM 服务
-# ============================================
-if ((-not $SkipService) -and (-not $Only -or $Only -eq "service")) {
-    Write-Step "Step 5/5: 注册 legacy NSSM 服务"
-
-    $envFile = Join-Path $ProjectDir ".env"
-    if (-not (Test-Path $envFile -PathType Leaf)) {
-        Write-Fail ".env 不存在, 无法注册服务"
-        exit 1
-    }
-    $envContent = Get-Content $envFile -Raw
-    $qmtSdk = Get-EnvValue $envContent "QMT_SDK_PATH"
-    $qmtEnabled = $qmtSdk -and $qmtSdk -ne ""
-    $nssmExe = Resolve-NssmExe
-    if (-not $nssmExe) {
-        Write-Fail "Legacy NSSM service registration requires nssm.exe, 且未在部署包中找到 nssm\nssm.exe"
-        Write-Host "  可将 nssm.exe 放到部署包的 nssm 目录, 或加入 PATH" -ForegroundColor Yellow
-        exit 1
-    }
-    Write-Ok "NSSM: $nssmExe"
-
-    # --- TDX legacy NSSM 服务 ---
-    if ($installTdxService) {
-        $tdxDefinition = New-DatasourceServiceDefinition `
-            -Instance tdx `
-            -ProjectDir $ProjectDir `
-            -LogsDir $LogsDir
-        Ensure-DatasourceNssmService -NssmExe $nssmExe -Definition $tdxDefinition
-    } else {
-        Write-Warn "ServiceInstance=$ServiceInstance, 跳过 legacy MistTDX 服务注册"
-    }
-
-    # --- QMT legacy NSSM 服务 ---
-    if (-not $installQmtService) {
-        Write-Warn "ServiceInstance=$ServiceInstance, 跳过 legacy MistQMT 服务注册"
-    } elseif (-not $qmtEnabled) {
-        Write-Warn "QMT_SDK_PATH 未配置, 跳过 legacy MistQMT 服务注册"
-    } else {
-        $qmtDefinition = New-DatasourceServiceDefinition `
-            -Instance qmt `
-            -ProjectDir $ProjectDir `
-            -LogsDir $LogsDir
-        Ensure-DatasourceNssmService -NssmExe $nssmExe -Definition $qmtDefinition
-    }
-
-    # 启动服务
-    Write-Host "`n  启动服务..." -ForegroundColor Cyan
-    if ($installTdxService) {
-        Start-DatasourceNssmService -NssmExe $nssmExe -ServiceName $tdxDefinition.ServiceName
-    }
-    if ($installQmtService -and $qmtEnabled) {
-        Start-DatasourceNssmService -NssmExe $nssmExe -ServiceName $qmtDefinition.ServiceName
-    }
-
-    Start-Sleep -Seconds 3
-
-    # 最终验证
-    Write-Host "`n  最终验证:" -ForegroundColor Cyan
-    if ($installTdxService) {
-        Wait-HttpHealth -Name "TDX" -Url "http://127.0.0.1:9001/health" -Attempts 1 -TimeoutSeconds 5 | Out-Null
-    } else {
-        Write-Warn "TDX legacy NSSM 服务未注册, 已跳过最终验证"
-    }
-    if ($installQmtService -and $qmtEnabled) {
-        Wait-HttpHealth -Name "QMT" -Url "http://127.0.0.1:9002/health" -Attempts 1 -TimeoutSeconds 5 | Out-Null
-    } else {
-        Write-Warn "QMT legacy NSSM 服务未注册, 已跳过最终验证"
-    }
-}
-
 Write-Host "`n===== 部署完成 =====" -ForegroundColor Green
 Write-Host "  日志目录: $LogsDir"
-Write-Host "  管理命令:"
-Write-Host "    WinSW appliance service: mist-tdx-datasource"
-Write-Host "    sc.exe query mist-tdx-datasource        # 查看状态"
-Write-Host "    sc.exe stop mist-tdx-datasource         # 停止服务"
-Write-Host "    sc.exe start mist-tdx-datasource        # 启动服务"
-Write-Host "    F:\quant\MistAPI\winsw\winsw.exe status # 或使用部署包内 WinSW"
-Write-Host "    QMT service is skipped by appliance deployment"
+Write-Host "  说明: 此脚本只负责依赖安装和临时启动测试, 不再注册 Windows 服务。"

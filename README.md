@@ -50,7 +50,6 @@ mist-datasource 是 NestJS 后端的**数据源桥接层**，核心职责：
 |----------|------|------|
 | tdx | 9001 | TDX 适配器 |
 | qmt | 9002 | QMT 适配器 |
-| aktools | 8080 | AKTools (待迁移) |
 
 ## 快速开始
 
@@ -110,12 +109,14 @@ uv run pytest --cov=src --cov=tdx --cov=qmt
 ### Windows 生产
 - `APP_ENV=production`，使用真实 SDK
 - 前置条件：通达信终端 / MiniQMT 客户端已启动
-- 使用 `scripts/deploy_windows.ps1` 一键部署为 Windows 服务
+- 使用 `scripts/deploy_windows.ps1` 安装依赖并做临时启动验证
 
 ## 目录结构
 
 ```
 mist-datasource/
+├── TDX.md                    # TDX SDK API 文档
+├── QMT.md                    # QMT SDK API 文档
 ├── src/                      # 共享核心代码
 │   ├── core/                 # 配置、日志、异常
 │   │   ├── config.py         # pydantic-settings 配置
@@ -170,9 +171,6 @@ mist-datasource/
 │   ├── health_check.sh       # 健康检查
 │   ├── deploy_windows.ps1    # Windows 部署脚本
 │   └── run_live_tests.ps1    # 运行真实环境测试
-└── docs/                     # 文档
-    ├── TDX.md                # TDX SDK API 文档
-    └── QMT.md                # QMT SDK API 文档
 ```
 
 ## API 文档
@@ -322,11 +320,11 @@ TDX/Backend 的 WinSW 部署。
 .\scripts\preflight-sdk.ps1
 ```
 
-旧的 `deploy_windows.ps1` / NSSM 路径仅保留给手工调试和回滚；Mist Windows
-appliance 不再依赖 NSSM，也不会调用它注册 QMT。
+`deploy_windows.ps1` 只负责依赖安装和临时启动验证；Mist Windows appliance
+不再依赖 NSSM，也不会通过 datasource 仓库注册 QMT 服务。
 
 ```powershell
-# 完整部署（安装依赖 + 运行测试 + 注册服务）
+# 完整验证（安装依赖 + 运行测试）
 .\scripts\deploy_windows.ps1
 
 # 仅安装
@@ -334,18 +332,9 @@ appliance 不再依赖 NSSM，也不会调用它注册 QMT。
 
 # 仅运行测试
 .\scripts\deploy_windows.ps1 -Only test
-
-# 仅注册 legacy 服务，不用于当前 appliance 主路径
-.\scripts\deploy_windows.ps1 -Only service
-
-# 手工调试时仅注册 legacy QMT NSSM 服务
-.\scripts\deploy_windows.ps1 -Only service -ServiceInstance qmt
-
-# 跳过服务注册
-.\scripts\deploy_windows.ps1 -SkipService
 ```
 
-**重要提示**：在服务重启前，必须在通达信终端中**手动删除**已注册的策略，否则 `tq.initialize()` 会报 "已有同名策略运行" 导致初始化失败。服务注册身份为 `sdk_path/mist_datasource.py`。
+**重要提示**：重新启动 TDX 进程前，必须在通达信终端中**手动删除**已注册的策略，否则 `tq.initialize()` 会报 "已有同名策略运行" 导致初始化失败。策略标识为 `sdk_path/mist_datasource.py`。
 
 ## 许可证
 

@@ -34,16 +34,6 @@ class QMTSettings(BaseSettings):
     sdk_path: str = ""  # QMT SDK 路径, e.g. "F:/quant/qmt/Lib"
 
 
-class AKToolsSettings(BaseSettings):
-    """AKTools Instance settings."""
-
-    model_config = SettingsConfigDict(
-        env_prefix="AKTOOLS_", env_file=".env", case_sensitive=False, extra="ignore"
-    )
-    host: str = "0.0.0.0"
-    port: int = 8080
-
-
 class AppSettings(BaseSettings):
     """Global application settings."""
 
@@ -57,7 +47,6 @@ class AppSettings(BaseSettings):
 
     tdx: TDXSettings = TDXSettings()
     qmt: QMTSettings = QMTSettings()
-    aktools: AKToolsSettings = AKToolsSettings()
 
     @property
     def is_production(self) -> bool:

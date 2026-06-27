@@ -9,7 +9,6 @@ def test_settings_defaults():
     assert settings.log_level == "INFO"
     assert settings.tdx.port == 9001
     assert settings.qmt.port == 9002
-    assert settings.aktools.port == 8080
 
 
 def test_tdx_datasource_settings_defaults(monkeypatch):

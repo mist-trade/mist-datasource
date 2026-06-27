@@ -41,12 +41,6 @@ if (Test-Path $TestRoot) {
 }
 New-Item -ItemType Directory -Path $TestRoot | Out-Null
 
-$nssmDir = Join-Path $ProjectDir "..\nssm"
-New-Item -ItemType Directory -Force -Path $nssmDir | Out-Null
-$nssmFile = Join-Path $nssmDir "nssm.exe"
-if (-not (Test-Path $nssmFile -PathType Leaf)) {
-    Set-Content -Path $nssmFile -Value "test nssm" -Encoding UTF8
-}
 $uvTestProjectDir = Join-Path $TestRoot "uv-project"
 $uvRuntimeDir = Join-Path $uvTestProjectDir "runtime"
 New-Item -ItemType Directory -Force -Path $uvRuntimeDir | Out-Null
@@ -64,8 +58,6 @@ Assert-Equal `
 
 $windowsEnvExample = Get-Content (Join-Path $ProjectDir ".env.windows.example") -Raw
 $deployWindows = Get-Content (Join-Path $ProjectDir "scripts\deploy_windows.ps1") -Raw
-$serviceCommon = Get-Content (Join-Path $ProjectDir "scripts\service-common.ps1") -Raw
-$serviceRunner = Get-Content (Join-Path $ProjectDir "scripts\service-runner.ps1") -Raw
 $tdxWinswInstall = Get-Content (Join-Path $ProjectDir "scripts\winsw\install-tdx-datasource.ps1") -Raw
 Assert-Match "default TDX SDK path" $windowsEnvExample "TDX_SDK_PATH=F:/quant/tdx/PYPlugins/user"
 Assert-Match "default QMT path" $windowsEnvExample "QMT_PATH=F:/quant/qmt"
@@ -80,19 +72,18 @@ Assert-Match "deploy script defaults to Tsinghua python package index" $deployWi
 Assert-Match "deploy script pins uv sync python" $deployWindows "--python"
 Assert-Match "deploy script defaults to Python 3.12" $deployWindows 'if (-not $uvPython) { $uvPython = "3.12" }'
 Assert-Match "deploy script syncs from frozen lockfile" $deployWindows "--frozen"
-Assert-Match "deploy script exposes service instance selector" $deployWindows '[ValidateSet("all", "tdx", "qmt")]'
-Assert-Match "deploy script declares legacy NSSM service path" $deployWindows "legacy NSSM service path"
-Assert-Match "deploy script labels service-only mode as legacy NSSM" $deployWindows "-Only service     # only run legacy NSSM service registration"
-Assert-Match "deploy script can install only legacy QMT NSSM service" $deployWindows "-ServiceInstance qmt"
-Assert-Match "deploy script skips legacy MistTDX when service instance is qmt" $deployWindows '$installTdxService = $ServiceInstance -in @("all", "tdx")'
+Assert-Match "deploy script no longer supports service-only step" $deployWindows "Use: install, test"
+Assert-Match "deploy script documents no service registration" $deployWindows "不再注册 Windows 服务"
 if ($deployWindows -match [regex]::Escape('--locked')) {
     throw "deploy script must use --frozen, not --locked, during appliance installs."
 }
 Write-Host "  [PASS] deploy script avoids lockfile freshness checks" -ForegroundColor Green
 Assert-Match "deploy script logs uv sync output" $deployWindows "uv-sync.log"
 Assert-Match "deploy script prints uv sync failure tail" $deployWindows "Recent uv sync output"
-Assert-Match "deploy script prints WinSW appliance service guidance" $deployWindows "WinSW appliance service: mist-tdx-datasource"
-Assert-Match "deploy script labels legacy NSSM service step" $deployWindows "Step 5/5: 注册 legacy NSSM 服务"
+if ($deployWindows -match [regex]::Escape('Step 5/5')) {
+    throw "deploy script must not include a service registration step."
+}
+Write-Host "  [PASS] deploy script has no service registration step" -ForegroundColor Green
 if ($deployWindows -match [regex]::Escape('nssm status MistTDX / MistQMT')) {
     throw "deploy script must not print NSSM commands in appliance install completion guidance."
 }
@@ -101,12 +92,6 @@ if ($deployWindows -match [regex]::Escape('2>$null | Out-Null')) {
     throw "deploy script must not hide uv sync stderr/stdout."
 }
 Write-Host "  [PASS] deploy script keeps uv sync output visible" -ForegroundColor Green
-Assert-Match "datasource service existence uses sc fallback" $serviceCommon "sc.exe"
-Assert-Match "service common declares legacy NSSM scope" $serviceCommon "Legacy NSSM service helpers"
-Assert-Match "service runner declares legacy NSSM scope" $serviceRunner "Legacy NSSM runtime runner"
-Assert-Match "datasource service stops existing service before reinstall" $serviceCommon '"stop", $ServiceName'
-Assert-Match "datasource service removes existing service before reinstall" $serviceCommon '"remove", $ServiceName, "confirm"'
-Assert-Match "datasource service reinstalls after removal" $serviceCommon '"install", $serviceName, $Definition.Application, $Definition.Parameters'
 Assert-Match "TDX WinSW installer accepts started-successfully output" $tdxWinswInstall "started successfully"
 Assert-Match "TDX WinSW installer clears native exit code after success" $tdxWinswInstall '$global:LASTEXITCODE = 0'
 
@@ -116,97 +101,9 @@ Assert-Equal `
     (Get-EnvValue "APP_ENV=production" "QMT_SDK_PATH")
 
 Assert-Equal `
-    "legacy NSSM fallback resolves packaged path" `
-    (Resolve-FullPath (Join-Path $ProjectDir "..\nssm\nssm.exe")) `
-    (Resolve-NssmExe -ProjectDir $ProjectDir -PreferPathLookup:$false)
-Assert-Equal `
     "uv fallback resolves packaged runtime" `
     (Resolve-FullPath (Join-Path $uvTestProjectDir "runtime\uv.exe")) `
     (Resolve-UvExe -ProjectDir $uvTestProjectDir -PreferPathLookup:$false)
-
-. "$PSScriptRoot\service-common.ps1"
-
-$tdxDefinition = New-DatasourceServiceDefinition `
-    -Instance tdx `
-    -ProjectDir $ProjectDir `
-    -LogsDir (Join-Path $ProjectDir "logs")
-
-Assert-Equal "legacy NSSM tdx service name" "MistTDX" $tdxDefinition.ServiceName
-Assert-Match "legacy NSSM tdx runner args" $tdxDefinition.Parameters "service-runner.ps1"
-Assert-Match "legacy NSSM tdx runner instance" $tdxDefinition.Parameters "-Instance tdx"
-Assert-Equal `
-    "legacy NSSM tdx stdout log" `
-    (Join-Path $ProjectDir "logs\tdx-stdout.log") `
-    $tdxDefinition.Stdout
-
-$script:nssmCalls = @()
-function Invoke-Nssm {
-    param(
-        [string]$NssmExe,
-        [string[]]$Arguments,
-        [switch]$AllowFailure
-    )
-
-    $script:nssmCalls += ,($Arguments -join "|")
-    $command = $Arguments[0]
-    $name = if ($Arguments.Count -gt 2) { $Arguments[2] } else { "" }
-
-    if ($command -eq "status") {
-        return @{ ExitCode = 0; Output = "SERVICE_STOPPED" }
-    }
-    if (($command -eq "get") -and ($name -eq "AppDirectory")) {
-        return @{ ExitCode = 0; Output = $ProjectDir }
-    }
-    if ($command -eq "get") {
-        return @{ ExitCode = 0; Output = "" }
-    }
-    return @{ ExitCode = 0; Output = "" }
-}
-
-function Find-CallIndex {
-    param(
-        [string[]]$Calls,
-        [string]$Pattern
-    )
-
-    for ($i = 0; $i -lt $Calls.Count; $i++) {
-        if ($Calls[$i] -match [regex]::Escape($Pattern)) {
-            return $i
-        }
-    }
-    return -1
-}
-
-Ensure-DatasourceNssmService -NssmExe $nssmFile -Definition $tdxDefinition
-$stopIndex = Find-CallIndex -Calls $script:nssmCalls -Pattern "stop|MistTDX"
-$removeIndex = Find-CallIndex -Calls $script:nssmCalls -Pattern "remove|MistTDX|confirm"
-$installIndex = Find-CallIndex -Calls $script:nssmCalls -Pattern "install|MistTDX|powershell.exe"
-if (-not (($stopIndex -ge 0) -and ($removeIndex -gt $stopIndex) -and ($installIndex -gt $removeIndex))) {
-    throw "datasource service reinstall order failed. Calls: $($script:nssmCalls -join ', ')"
-}
-Write-Host "  [PASS] datasource service reinstall order" -ForegroundColor Green
-
-. "$PSScriptRoot\service-runner.ps1" -LoadOnly
-
-$statePath = Join-Path $TestRoot "service-runner-tdx-state.json"
-Add-CrashRecord `
-    -StateFile $statePath `
-    -Now ([datetime]"2026-06-22T10:00:00Z") `
-    -WindowMinutes 10
-Add-CrashRecord `
-    -StateFile $statePath `
-    -Now ([datetime]"2026-06-22T10:01:00Z") `
-    -WindowMinutes 10
-Assert-Equal `
-    "crash count is retained" `
-    2 `
-    (Get-CrashCount -StateFile $statePath -Now ([datetime]"2026-06-22T10:02:00Z") -WindowMinutes 10)
-Clear-CrashState -StateFile $statePath
-Assert-Equal `
-    "crash state clears" `
-    0 `
-    (Get-CrashCount -StateFile $statePath -Now ([datetime]"2026-06-22T10:03:00Z") -WindowMinutes 10)
-
 if (Test-Path $TestRoot) {
     Remove-Item $TestRoot -Recurse -Force
 }

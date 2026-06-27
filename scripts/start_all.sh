@@ -41,11 +41,6 @@ if check_port 9002; then
     echo "QMT Adapter started with PID: $QMT_PID"
 fi
 
-# Note: AKTools (Instance 3) should be started separately
-echo ""
-echo "Note: AKTools (Instance 3) should be started separately:"
-echo "  python3 -m aktools"
-echo ""
 echo "All instances started successfully!"
 echo ""
 echo "API Documentation:"
