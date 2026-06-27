@@ -269,6 +269,18 @@ async def test_get_trading_dates_calls_tdx_calendar_method():
 
 
 @pytest.mark.asyncio
+async def test_get_trading_dates_normalizes_tdx_date_field():
+    fake_client = FakeTdxHttpClient(
+        {"get_trading_dates": {"ErrorId": "0", "Date": ["20260625", "20260626"]}}
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    dates = await provider.get_trading_dates("SH", count=2)
+
+    assert dates == ["2026-06-25", "2026-06-26"]
+
+
+@pytest.mark.asyncio
 async def test_get_securities_calls_tdx_stock_list_method():
     fake_client = FakeTdxHttpClient({"get_stock_list": {"Value": ["SH600519"]}})
     provider = TdxDatasourceProvider(fake_client)

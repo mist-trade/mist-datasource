@@ -142,8 +142,10 @@ class TdxDatasourceProvider:
             },
         )
         values = _unwrap_tdx_value(native)
+        if isinstance(values, dict):
+            values = _first_native_value(values, "Date", "date", "tradingDates", "dates")
         if isinstance(values, list | tuple):
-            return [str(value) for value in values]
+            return [_normalize_trading_date(value) for value in values]
         return []
 
     async def get_securities(self, market: str = "5") -> list[dict[str, Any]]:
@@ -626,6 +628,13 @@ def _unwrap_tdx_value(native: Any) -> Any:
         if key.replace("_", "").replace(" ", "").lower() == "value":
             return value
     return native
+
+
+def _normalize_trading_date(value: Any) -> str:
+    text = str(value)
+    if len(text) == 8 and text.isdigit():
+        return f"{text[0:4]}-{text[4:6]}-{text[6:8]}"
+    return text
 
 
 def _normalize_security_item(item: Any) -> dict[str, Any]:
