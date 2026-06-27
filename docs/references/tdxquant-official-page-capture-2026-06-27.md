@@ -69,7 +69,7 @@ families as useful datasource coverage targets:
 - Finance and report data: `get_financial_data`,
   `get_financial_data_by_date`, `get_gp_one_data`, `get_gpjy_value`,
   `get_gpjy_value_by_date`, `get_bkjy_value`, `get_bkjy_value_by_date`,
-  `get_scjy_value`, `get_scjy_value_by_date`, `get_report_data`.
+  `get_scjy_value`, `get_scjy_value_by_date`.
 - Formula data and execution: `formula_format_data`, `formula_set_data`,
   `formula_set_data_info`, `formula_get_data`, `formula_get_all`,
   `formula_get_info`, `formula_zb`, `formula_xg`, `formula_exp`,
@@ -124,12 +124,12 @@ matrix:
 | `/v1/reports/sector-trade/by-date/query` | `get_bkjy_value_by_date` |
 | `/v1/reports/market-trade/query` | `get_scjy_value` |
 | `/v1/reports/market-trade/by-date/query` | `get_scjy_value_by_date` |
-| `/v1/reports/data/query` | `get_report_data` |
 
 The runtime smoke script includes optional `-IncludeFinanceReportSmoke`, which
-uses `get_gp_one_data` plus `/v1/finance/single-data/query` as a lightweight
-outside-trading-hours probe. Narrow report fields still need Windows smoke
-confirmation before backend product code relies on them.
+uses current official finance/report methods as read-only probes. The older
+`get_report_data` lead is not present in the current official finance
+navigation and the validated TDX MCP runtime returns `-32601` for that method,
+so `/v1/reports/data/query` is intentionally not exposed.
 
 ## Phase 4 Normalized Endpoint Capture
 

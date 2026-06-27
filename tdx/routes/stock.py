@@ -1,7 +1,7 @@
 """TDX 股票信息 REST API 路由.
 
-提供股票基本信息、报告数据等查询的 HTTP 接口.
-对应 TDX SDK: tqcenter.tq (get_stock_info, get_report_data, get_more_info, get_relation)
+提供股票基本信息等查询的 HTTP 接口.
+对应 TDX SDK: tqcenter.tq (get_stock_info, get_more_info, get_relation)
 """
 
 from fastapi import APIRouter, HTTPException, Query
@@ -60,28 +60,6 @@ async def get_stock_info(
 
     try:
         data = await adapter.get_stock_info(stock_code)
-        return {"data": data}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-
-@router.get("/report-data")
-async def get_report_data(
-    stock_code: str = Query(..., description="股票代码，如 600519.SH"),
-):
-    """获取报告数据.
-
-    对应 TDX SDK: tq.get_report_data(stock_code)
-
-    Returns:
-        {"data": dict}
-    """
-    adapter = _get_adapter()
-    if not adapter:
-        raise HTTPException(status_code=503, detail="Adapter not initialized")
-
-    try:
-        data = await adapter.get_report_data(stock_code)
         return {"data": data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e

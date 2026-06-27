@@ -386,22 +386,6 @@ class TDXAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get stock info: {e}") from e
 
-    async def get_report_data(self, stock_code: str = "") -> dict:
-        """获取报告数据.
-
-        对应 TDX SDK: tq.get_report_data(stock_code)
-
-        Args:
-            stock_code: 证券代码
-
-        Returns:
-            报告数据字典
-        """
-        try:
-            return self._tq.get_report_data(stock_code)
-        except Exception as e:
-            raise AdapterError(f"Failed to get report data: {e}") from e
-
     async def get_more_info(self, stock_code: str = "", field_list: list[str] | None = None) -> dict:
         """获取更多信息.
 

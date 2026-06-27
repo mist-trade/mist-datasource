@@ -234,11 +234,6 @@ class TdxMarketTradeAggregateByDateQueryRequest(TdxModel):
     mmdd: int = 0
 
 
-class TdxReportDataQueryRequest(TdxModel):
-    provider: Literal["tdx", "qmt"] = "tdx"
-    symbol: str
-
-
 class TdxFormulaFormatDataRequest(TdxModel):
     provider: Literal["tdx", "qmt"] = "tdx"
     data: dict[str, Any] = Field(default_factory=dict)

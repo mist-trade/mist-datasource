@@ -34,7 +34,6 @@ class FakeTdxProvider:
         self.sector_trade_aggregate_by_date_queries: list[tuple[list[str], list[str], int, int]] = []
         self.market_trade_aggregate_queries: list[tuple[list[str], str, str]] = []
         self.market_trade_aggregate_by_date_queries: list[tuple[list[str], int, int]] = []
-        self.report_data_queries: list[str] = []
         self.formula_format_queries: list[dict[str, Any]] = []
         self.formula_set_data_queries: list[dict[str, Any]] = []
         self.formula_set_data_info_queries: list[dict[str, Any]] = []
@@ -428,17 +427,6 @@ class FakeTdxProvider:
             }
         ]
 
-    async def get_report_data(self, symbol: str) -> list[dict[str, Any]]:
-        self.report_data_queries.append(symbol)
-        return [
-            {
-                "symbol": symbol,
-                "field": "report",
-                "value": "annual",
-                "provider": "tdx",
-            }
-        ]
-
     async def format_formula_data(
         self,
         data: dict[str, Any],
@@ -635,7 +623,7 @@ async def test_providers_returns_tdx_and_qmt_capability_manifests(
     assert tdx_families["stock-trade-aggregate"] == "supported"
     assert tdx_families["sector-trade-aggregate"] == "supported"
     assert tdx_families["market-trade-aggregate"] == "supported"
-    assert tdx_families["report-data"] == "unsupported"
+    assert "report-data" not in tdx_families
     assert tdx_families["formula-data"] == "supported"
     assert tdx_families["formula-metadata"] == "supported"
     assert tdx_families["formula-execution"] == "supported"
@@ -643,7 +631,7 @@ async def test_providers_returns_tdx_and_qmt_capability_manifests(
     assert tdx_families["formulas"] == "supported"
     assert qmt_families["bars"] in {"supported", "planned", "unsupported"}
     assert qmt_families["financial-data"] == "unsupported"
-    assert qmt_families["report-data"] == "unsupported"
+    assert "report-data" not in qmt_families
     assert qmt_families["formula-data"] == "unsupported"
     assert qmt_families["formula-execution"] == "unsupported"
     assert qmt_families["formulas"] == "unsupported"
@@ -771,12 +759,6 @@ async def test_providers_returns_tdx_and_qmt_capability_manifests(
             {"provider": "qmt", "fields": ["SC10"]},
             "market-trade-aggregate",
             "reports/market-trade/by-date/query",
-        ),
-        (
-            "/v1/reports/data/query",
-            {"provider": "qmt", "symbol": "600519.SH"},
-            "report-data",
-            "reports/data/query",
         ),
         (
             "/v1/formulas/data/format/query",
@@ -1335,19 +1317,21 @@ async def test_market_trade_aggregate_by_date_query_returns_normalized_items(
 
 
 @pytest.mark.asyncio
-async def test_report_data_query_returns_normalized_items(v1_client: AsyncClient) -> None:
-    import tdx.main
-
+async def test_report_data_query_route_is_not_exposed(v1_client: AsyncClient) -> None:
     response = await v1_client.post(
         "/v1/reports/data/query",
         json={"symbol": "600519.SH"},
     )
 
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_report_data_query_is_absent_from_openapi(v1_client: AsyncClient) -> None:
+    response = await v1_client.get("/openapi.json")
+
     assert response.status_code == 200
-    body = response.json()
-    assert body["ok"] is True
-    assert body["data"]["items"][0]["symbol"] == "600519.SH"
-    assert tdx.main.tdx_provider.report_data_queries == ["600519.SH"]
+    assert "/v1/reports/data/query" not in response.json()["paths"]
 
 
 @pytest.mark.asyncio

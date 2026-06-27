@@ -74,7 +74,10 @@ Related references:
 | `get_bkjy_value_by_date` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10p3d31736g.html> | `normalized-now` | `sector-trade-aggregate` via `/v1/reports/sector-trade/by-date/query` | QMT returns unsupported until mapping is verified. | Date-specific fixture. |
 | `get_scjy_value` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10p8op6ia9g.html> | `normalized-now` | `market-trade-aggregate` via `/v1/reports/market-trade/query` | QMT returns unsupported until mapping is verified. | Fixture and market mapping. |
 | `get_scjy_value_by_date` | <https://help.tdx.com.cn/quant/docs/markdown/TdxQuant.md/mindoc-1h10pe678ta04.html> | `normalized-now` | `market-trade-aggregate` via `/v1/reports/market-trade/by-date/query` | QMT returns unsupported until mapping is verified. | Date-specific fixture. |
-| `get_report_data` | Official docs content; no stable nav page found in route scrape. | `normalized-now` | `report-data` via `/v1/reports/data/query` | QMT returns unsupported until mapping is verified. | Fixture and live probe before product code relies on narrow report fields. |
+
+`get_report_data` is intentionally not exposed. It is not present in the
+current official finance navigation, and the validated TDX MCP runtime returns
+`-32601` for that tqcenter method name.
 
 ## Phase 4: Formula Data And Execution
 

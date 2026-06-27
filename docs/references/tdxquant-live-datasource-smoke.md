@@ -328,14 +328,26 @@ Run this after basic mode when validating Phase 3 datasource coverage:
   -IncludeFinanceReportSmoke
 ```
 
-The optional probe uses a lightweight `get_gp_one_data` read because it is
-stable outside trading hours:
+The optional probe uses read-only finance/report calls that are present in the
+current official TDX finance navigation:
 
 1. `POST /v1/raw/tdx/call` with `method=get_gp_one_data`
    - native result contains the requested field for the requested symbol
-2. `POST /v1/finance/single-data/query`
-   - envelope `ok=true`
-   - `data.items` is non-empty and contains `symbol`, `field`, and `value`
+2. Normalized finance endpoints:
+   - `/v1/finance/financial-data/query`
+   - `/v1/finance/financial-data/by-date/query`
+   - `/v1/finance/single-data/query`
+3. Normalized trade aggregate endpoints:
+   - `/v1/reports/stock-trade/query`
+   - `/v1/reports/stock-trade/by-date/query`
+   - `/v1/reports/sector-trade/query`
+   - `/v1/reports/sector-trade/by-date/query`
+   - `/v1/reports/market-trade/query`
+   - `/v1/reports/market-trade/by-date/query`
+
+`/v1/reports/data/query` is not exposed because the current official finance
+navigation does not list `get_report_data`, and the validated TDX MCP runtime
+returns `-32601` for that tqcenter method.
 
 ### Reference/Instrument Optional Mode
 

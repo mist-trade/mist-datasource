@@ -51,10 +51,10 @@ class TestStockRoutes:
         resp = await tdx_client.get("/api/tdx/stock-info?stock_code=600519.SH")
         assert resp.status_code == 200
 
-    async def test_report_data(self, tdx_client):
-        """Test /api/tdx/report-data endpoint."""
+    async def test_report_data_is_not_exposed(self, tdx_client):
+        """Test /api/tdx/report-data endpoint is not exposed."""
         resp = await tdx_client.get("/api/tdx/report-data?stock_code=600519.SH")
-        assert resp.status_code == 200
+        assert resp.status_code == 404
 
 
 @pytest.mark.asyncio

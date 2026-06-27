@@ -180,25 +180,6 @@ class TDXMockAdapter(MarketDataAdapter):
             "FlowShare": 125619.78,
         }
 
-    async def get_report_data(self, stock_code: str) -> dict[str, Any]:
-        """获取报告数据."""
-        return {
-            "Code": stock_code,
-            "Name": "测试股票",
-            "Open": 1750.00,
-            "Close": 1752.00,
-            "High": 1755.00,
-            "Low": 1748.00,
-            "Volume": 25000,
-            "Amount": 438000000.00,
-            "Tick": 0.02,
-            "Change": 2.00,
-            "ChangePct": 0.11,
-            "Turnover": 0.20,
-            "PE": 35.5,
-            "PB": 12.3,
-        }
-
     async def get_more_info(self, stock_code: str) -> dict[str, Any]:
         """获取更多信息."""
         return {

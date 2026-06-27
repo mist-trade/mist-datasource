@@ -27,7 +27,6 @@ from src.datasource.tdx_models import (
     TdxMarketTradeAggregateByDateQueryRequest,
     TdxMarketTradeAggregateQueryRequest,
     TdxPriceVolumeQueryRequest,
-    TdxReportDataQueryRequest,
     TdxSectorListQueryRequest,
     TdxSectorTradeAggregateByDateQueryRequest,
     TdxSectorTradeAggregateQueryRequest,
@@ -649,17 +648,6 @@ async def query_market_trade_aggregate_by_date(
         provider_id=payload.provider,
         capability_family="market-trade-aggregate",
         operation_name="reports/market-trade/by-date/query",
-    )
-
-
-@router.post("/v1/reports/data/query")
-async def query_report_data(payload: TdxReportDataQueryRequest, request: Request):
-    return await _call_provider(
-        request,
-        lambda provider: _wrap("items", provider.get_report_data(payload.symbol)),
-        provider_id=payload.provider,
-        capability_family="report-data",
-        operation_name="reports/data/query",
     )
 
 

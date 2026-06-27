@@ -45,7 +45,6 @@ def test_qmt_manifest_keeps_unverified_capabilities_explicit() -> None:
         "reference-data",
         "finance-report",
         "financial-data",
-        "report-data",
         "formula-data",
         "formula-execution",
         "formula-batch-execution",
@@ -58,6 +57,8 @@ def test_qmt_manifest_keeps_unverified_capabilities_explicit() -> None:
         assert status == "unsupported"
         assert methods == []
         assert unsupported_reason
+
+    assert "report-data" not in QMT_CAPABILITY_STATUSES
 
 
 @pytest.mark.asyncio

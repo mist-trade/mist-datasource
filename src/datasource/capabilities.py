@@ -115,12 +115,6 @@ TDX_CAPABILITY_STATUSES: dict[str, tuple[CapabilityStatus, str, list[str], str |
         ["get_scjy_value", "get_scjy_value_by_date"],
         None,
     ),
-    "report-data": (
-        "unsupported",
-        "planned",
-        [],
-        "Current TDX MCP runtime does not expose get_report_data",
-    ),
     "formulas": (
         "supported",
         "operator",
@@ -215,7 +209,6 @@ QMT_CAPABILITY_STATUSES: dict[str, tuple[CapabilityStatus, str, list[str], str |
         [],
         "QMT market trade aggregate mapping is not verified",
     ),
-    "report-data": ("unsupported", "planned", [], "QMT report-data mapping is not verified"),
     "formulas": ("unsupported", "planned", [], "QMT formula integration is not implemented"),
     "formula-data": ("unsupported", "planned", [], "QMT formula data mapping is not verified"),
     "formula-metadata": (

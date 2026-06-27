@@ -67,10 +67,9 @@ class TestStockInfoMethods:
         assert isinstance(result, dict)
         assert "Code" in result or "Name" in result
 
-    async def test_get_report_data(self, adapter):
-        """Test get_report_data returns dict."""
-        result = await adapter.get_report_data("600519.SH")
-        assert isinstance(result, dict)
+    async def test_get_report_data_is_not_exposed(self, adapter):
+        """Test get_report_data is not exposed by the adapter."""
+        assert not hasattr(adapter, "get_report_data")
 
     async def test_get_more_info(self, adapter):
         """Test get_more_info returns dict."""

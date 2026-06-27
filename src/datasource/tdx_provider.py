@@ -426,11 +426,6 @@ class TdxDatasourceProvider:
         )
         return _normalize_trade_aggregate_items("market", [None], fields, native)
 
-    async def get_report_data(self, symbol: str) -> list[dict[str, Any]]:
-        tdx_symbol = to_tdx_http_code(symbol)
-        native = await self.client.call("get_report_data", {"stock_code": tdx_symbol})
-        return _normalize_report_data_items(tdx_symbol, native)
-
     async def format_formula_data(
         self,
         data: dict[str, Any],
@@ -961,44 +956,6 @@ def _normalize_trade_aggregate_items(
                     }
                 )
     return items
-
-
-def _normalize_report_data_items(symbol: str, native: Any) -> list[dict[str, Any]]:
-    values = _unwrap_tdx_value(native)
-    normalized_symbol = normalize_symbol(symbol)
-    if isinstance(values, dict):
-        return [
-            {
-                "symbol": normalized_symbol,
-                "field": str(field_name),
-                "value": value,
-                "provider": "tdx",
-                "raw": values,
-            }
-            for field_name, value in values.items()
-        ]
-    if isinstance(values, list | tuple):
-        return [
-            {
-                "symbol": normalized_symbol,
-                "field": str(index),
-                "value": item,
-                "provider": "tdx",
-                "raw": values,
-            }
-            for index, item in enumerate(values)
-        ]
-    if values is None:
-        return []
-    return [
-        {
-            "symbol": normalized_symbol,
-            "field": "value",
-            "value": values,
-            "provider": "tdx",
-            "raw": values,
-        }
-    ]
 
 
 def _normalize_formula_data_items(native: Any) -> list[dict[str, Any]]:

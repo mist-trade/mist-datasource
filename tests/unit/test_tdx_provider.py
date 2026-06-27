@@ -887,66 +887,10 @@ async def test_get_market_trade_aggregate_by_date_calls_tdx_scjy_value_by_date()
     ]
 
 
-@pytest.mark.asyncio
-async def test_get_report_data_calls_tdx_method_and_normalizes_items():
-    fake_client = FakeTdxHttpClient(
-        {
-            "get_report_data": {
-                "Value": {
-                    "ReportName": "annual",
-                    "ReportDate": "20241231",
-                    "Summary": "stable",
-                }
-            }
-        }
-    )
-    provider = TdxDatasourceProvider(fake_client)
+def test_report_data_is_not_a_normalized_provider_method():
+    provider = TdxDatasourceProvider(FakeTdxHttpClient({}))
 
-    items = await provider.get_report_data("600519.SH")
-
-    assert items == [
-        {
-            "symbol": "600519.SH",
-            "field": "ReportName",
-            "value": "annual",
-            "provider": "tdx",
-            "raw": {
-                "ReportName": "annual",
-                "ReportDate": "20241231",
-                "Summary": "stable",
-            },
-        },
-        {
-            "symbol": "600519.SH",
-            "field": "ReportDate",
-            "value": "20241231",
-            "provider": "tdx",
-            "raw": {
-                "ReportName": "annual",
-                "ReportDate": "20241231",
-                "Summary": "stable",
-            },
-        },
-        {
-            "symbol": "600519.SH",
-            "field": "Summary",
-            "value": "stable",
-            "provider": "tdx",
-            "raw": {
-                "ReportName": "annual",
-                "ReportDate": "20241231",
-                "Summary": "stable",
-            },
-        },
-    ]
-    assert fake_client.calls == [
-        (
-            "get_report_data",
-            {
-                "stock_code": "600519.SH",
-            },
-        )
-    ]
+    assert not hasattr(provider, "get_report_data")
 
 
 @pytest.mark.asyncio
