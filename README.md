@@ -115,8 +115,7 @@ uv run pytest --cov=src --cov=tdx --cov=qmt
 
 ```
 mist-datasource/
-├── TDX.md                    # TDX SDK API 文档
-├── QMT.md                    # QMT SDK API 文档
+├── docs/references/          # TDX/QMT datasource 设计、覆盖矩阵和 smoke 参考
 ├── src/                      # 共享核心代码
 │   ├── core/                 # 配置、日志、异常
 │   │   ├── config.py         # pydantic-settings 配置
