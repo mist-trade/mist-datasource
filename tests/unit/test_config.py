@@ -1,6 +1,6 @@
 """Unit tests for configuration management."""
 
-from src.core.config import TDXSettings, settings
+from src.core.config import AppSettings, TDXSettings, settings
 
 
 def test_settings_defaults():
@@ -33,6 +33,21 @@ def test_tdx_datasource_settings_defaults(monkeypatch):
     assert tdx_settings.reconcile_interval_seconds == 60
     assert tdx_settings.max_subscriptions == 100
     assert tdx_settings.ws_queue_max_size == 1000
+
+
+def test_app_settings_ignores_unrelated_env_file_values(tmp_path):
+    """Ignore other service settings that may share the appliance .env file."""
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "APP_ENV=production\n"
+        "AKTOOLS_HOST=127.0.0.1\n"
+        "AKTOOLS_PORT=8080\n",
+        encoding="utf-8",
+    )
+
+    app_settings = AppSettings(_env_file=env_file)
+
+    assert app_settings.app_env == "production"
 
 
 def test_is_production():

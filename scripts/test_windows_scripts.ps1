@@ -95,6 +95,8 @@ if ($deployWindows -match [regex]::Escape('2>$null | Out-Null')) {
 Write-Host "  [PASS] deploy script keeps uv sync output visible" -ForegroundColor Green
 Assert-Match "TDX WinSW installer accepts started-successfully output" $tdxWinswInstall "started successfully"
 Assert-Match "TDX WinSW installer clears native exit code after success" $tdxWinswInstall '$global:LASTEXITCODE = 0'
+Assert-Match "TDX WinSW installer resolves packaged uv" $tdxWinswInstall "Resolve-UvExe"
+Assert-Match "TDX WinSW installer default executable can be resolved" $tdxWinswInstall 'if (-not $Executable)'
 if ($tdxWinswInstall -match [regex]::Escape('("refresh")')) {
     throw "TDX WinSW installer must not call refresh; older bundled WinSW builds do not support it."
 }

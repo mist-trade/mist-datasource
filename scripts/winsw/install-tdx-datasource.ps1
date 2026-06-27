@@ -3,7 +3,7 @@ param(
     [string]$ProjectDir = "",
     [string]$ServiceDir = "",
     [string]$WinSWExe = "",
-    [string]$Executable = "uv",
+    [string]$Executable = "",
     [string]$Arguments = "run uvicorn tdx.main:app --host %DATASOURCE_HOST% --port %DATASOURCE_PORT%",
     [string]$TdxHttpUrl = "http://127.0.0.1:17709/",
     [string]$TdxSdkPath = "",
@@ -118,6 +118,25 @@ $EnvFile = Join-Path $ProjectDir ".env"
 $EnvContent = ""
 if (Test-Path $EnvFile -PathType Leaf) {
     $EnvContent = Get-Content $EnvFile -Raw
+}
+
+if (-not $Executable) {
+    $Executable = Resolve-UvExe -ProjectDir $ProjectDir -PreferPathLookup:$false
+    if (-not $Executable) {
+        $Executable = Resolve-UvExe -ProjectDir $ProjectDir -PreferPathLookup:$true
+    }
+    if (-not $Executable) {
+        if ($WhatIfPreference) {
+            Write-Warn "uv executable was not found. A real install requires runtime\uv.exe or uv on PATH."
+        }
+        else {
+            Write-Fail "uv executable not found. Place uv.exe under runtime\ or pass -Executable."
+            exit 1
+        }
+    }
+}
+if ($Executable) {
+    Write-Ok "Datasource executable: $Executable"
 }
 
 if (-not $PSBoundParameters.ContainsKey("TdxHttpUrl")) {
