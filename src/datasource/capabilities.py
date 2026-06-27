@@ -163,12 +163,17 @@ TDX_CAPABILITY_STATUSES: dict[str, tuple[CapabilityStatus, str, list[str], str |
 
 QMT_CAPABILITY_STATUSES: dict[str, tuple[CapabilityStatus, str, list[str], str | None]] = {
     "bars": ("planned", "planned", ["get_market_data"], None),
-    "snapshots": ("planned", "planned", [], "QMT snapshot mapping is not implemented"),
+    "snapshots": ("planned", "planned", ["get_full_tick"], None),
     "price-volume": ("unsupported", "planned", [], "QMT price-volume mapping is not verified"),
     "benchmarks": ("unsupported", "planned", [], "QMT benchmark mapping is not verified"),
     "calendar": ("planned", "planned", ["get_trading_dates"], None),
     "securities": ("planned", "planned", ["get_stock_list"], None),
-    "security-info": ("unsupported", "planned", [], "QMT security info mapping is not verified"),
+    "security-info": (
+        "planned",
+        "planned",
+        ["get_instrument_detail", "get_instrument_type"],
+        None,
+    ),
     "security-search": ("unsupported", "planned", [], "QMT security search mapping is not verified"),
     "security-relations": ("unsupported", "planned", [], "QMT security relation mapping is not verified"),
     "sector-list": ("planned", "planned", ["get_sector_list"], None),

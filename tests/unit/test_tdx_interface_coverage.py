@@ -2,6 +2,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 COVERAGE_PATH = ROOT / "docs" / "references" / "tdxquant-interface-coverage.md"
+QMT_ALIGNMENT_PATH = ROOT / "docs" / "references" / "qmt-provider-alignment.md"
 
 
 def _coverage_text() -> str:
@@ -69,3 +70,23 @@ def test_client_control_and_user_sector_mutations_remain_operator_only() -> None
     ]:
         row = _coverage_row(method)
         assert ("| `admin-only` |" in row) or ("| `do-not-expose` |" in row)
+
+
+def test_qmt_alignment_reference_is_linked_from_coverage_matrix() -> None:
+    coverage_text = _coverage_text()
+    qmt_text = QMT_ALIGNMENT_PATH.read_text(encoding="utf-8")
+
+    assert "docs/references/qmt-provider-alignment.md" in coverage_text
+    assert "First parity target set" in qmt_text
+    assert "`/api/qmt/*`" in qmt_text
+    assert "`/v1`" in qmt_text
+    for family in [
+        "bars",
+        "snapshots",
+        "calendar",
+        "securities",
+        "security-info",
+        "sector-list",
+        "sector-members",
+    ]:
+        assert f"`{family}`" in qmt_text

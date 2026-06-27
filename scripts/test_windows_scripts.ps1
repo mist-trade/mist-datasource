@@ -150,6 +150,10 @@ Assert-Match "runtime checks preserve dotted symbols for TDX HTTP" $runtimeCheck
 Assert-Match "runtime checks can explicitly allow websocket subscription changes" $runtimeChecks "AllowWebSocketSubscriptionChange"
 Assert-Match "runtime checks support optional live bar wait" $runtimeChecks "RequireLiveBar"
 Assert-Match "runtime checks unsubscribe after websocket smoke" $runtimeChecks '"type" = "unsubscribe"'
+if ($runtimeChecks -match [regex]::Escape('MistQMT')) {
+    throw "runtime checks must not require a QMT service until QMT SDK/login are finalized."
+}
+Write-Host "  [PASS] runtime checks do not require QMT service startup" -ForegroundColor Green
 
 Assert-Equal `
     "blank env returns empty string" `

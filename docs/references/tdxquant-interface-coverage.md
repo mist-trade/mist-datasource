@@ -10,6 +10,7 @@ the market datasource boundary.
 Related references:
 
 - Live smoke reference: `docs/references/tdxquant-live-datasource-smoke.md`
+- QMT alignment reference: `docs/references/qmt-provider-alignment.md`
 - Official page capture:
   `docs/references/tdxquant-official-page-capture-2026-06-27.md`
 - Official overview: <https://help.tdx.com.cn/quant/>
