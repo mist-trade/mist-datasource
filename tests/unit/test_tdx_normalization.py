@@ -7,6 +7,7 @@ from src.datasource.tdx_normalization import (
     normalize_tdx_bar_rows,
     normalize_tdx_snapshot,
     to_tdx_code,
+    to_tdx_http_code,
 )
 
 
@@ -20,6 +21,12 @@ def test_normalize_symbol_accepts_tdx_prefix_and_market_suffix():
 def test_to_tdx_code_returns_prefix_shape():
     assert to_tdx_code("600519.SH") == "SH600519"
     assert to_tdx_code("000001.SZ") == "SZ000001"
+
+
+def test_to_tdx_http_code_returns_dotted_shape():
+    assert to_tdx_http_code("SH600519") == "600519.SH"
+    assert to_tdx_http_code("600519.SH") == "600519.SH"
+    assert to_tdx_http_code("SZ000001") == "000001.SZ"
 
 
 def test_normalize_number_coerces_strings_and_empty_values():

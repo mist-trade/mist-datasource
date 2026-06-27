@@ -100,6 +100,7 @@ Assert-Match "TDX WinSW installer resolves packaged uv" $tdxWinswInstall "Resolv
 Assert-Match "TDX WinSW installer default executable can be resolved" $tdxWinswInstall 'if (-not $Executable)'
 Assert-Match "TDX WinSW smoke uses supported market data method" $tdxWinswSmoke "get_market_data"
 Assert-Match "TDX WinSW smoke uses read-only websocket ping" $tdxWinswSmoke '"type" = "ping"'
+Assert-Match "TDX WinSW smoke preserves dotted symbols for TDX HTTP" $tdxWinswSmoke "ConvertTo-TdxHttpSymbol"
 if ($tdxWinswSmoke -match [regex]::Escape('method = "ping"')) {
     throw "TDX WinSW smoke must not call unsupported raw ping."
 }
@@ -128,6 +129,9 @@ Assert-Match "runtime checks query sectors" $runtimeChecks "/v1/sectors/query"
 Assert-Match "runtime checks verify raw TDX market data" $runtimeChecks "get_market_data"
 Assert-Match "runtime checks accept unwrapped raw market data" $runtimeChecks "Raw get_market_data direct result"
 Assert-Match "runtime checks verify raw TDX snapshot" $runtimeChecks "get_market_snapshot"
+Assert-Match "runtime checks use TDX HTTP dotted symbol default" $runtimeChecks '[string]$Symbol = "600519.SH"'
+Assert-Match "runtime checks use TDX sector block default" $runtimeChecks '[string]$Sector = "通达信88"'
+Assert-Match "runtime checks preserve dotted symbols for TDX HTTP" $runtimeChecks "ConvertTo-TdxHttpSymbol"
 Assert-Match "runtime checks can explicitly allow websocket subscription changes" $runtimeChecks "AllowWebSocketSubscriptionChange"
 Assert-Match "runtime checks support optional live bar wait" $runtimeChecks "RequireLiveBar"
 Assert-Match "runtime checks unsubscribe after websocket smoke" $runtimeChecks '"type" = "unsubscribe"'

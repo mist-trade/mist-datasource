@@ -48,12 +48,15 @@ function Invoke-JsonPost {
         -TimeoutSec 20
 }
 
-function ConvertTo-TdxNativeSymbol {
+function ConvertTo-TdxHttpSymbol {
     param([string]$Symbol)
 
     $normalized = $Symbol.Trim().ToUpperInvariant()
     if ($normalized -match "^(?<code>\d{6})\.(?<market>SH|SZ)$") {
-        return "$($Matches.market)$($Matches.code)"
+        return "$($Matches.code).$($Matches.market)"
+    }
+    if ($normalized -match "^(?<market>SH|SZ)(?<code>\d{6})$") {
+        return "$($Matches.code).$($Matches.market)"
     }
     return $normalized
 }
@@ -107,7 +110,7 @@ function Send-WebSocketJson {
 
 try {
     $BaseUrl = $BaseUrl.TrimEnd("/")
-    $rawSymbol = ConvertTo-TdxNativeSymbol -Symbol $Symbol
+    $rawSymbol = ConvertTo-TdxHttpSymbol -Symbol $Symbol
 
     Write-Host "Checking health: $BaseUrl/health"
     $health = Invoke-RestMethod -Method Get -Uri "$BaseUrl/health" -TimeoutSec 20

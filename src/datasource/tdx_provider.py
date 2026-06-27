@@ -7,11 +7,11 @@ from src.datasource.tdx_normalization import (
     normalize_symbol,
     normalize_tdx_bar_rows,
     normalize_tdx_snapshot,
-    to_tdx_code,
+    to_tdx_http_code,
 )
 
 TDX_MARKET_DATA_FIELDS = ["Open", "High", "Low", "Close", "Volume", "Amount"]
-TDX_HEALTH_PROBE_SYMBOL = "SH000001"
+TDX_HEALTH_PROBE_SYMBOL = "600519.SH"
 
 
 class TdxDatasourceProvider:
@@ -27,7 +27,7 @@ class TdxDatasourceProvider:
         end_time: str | None,
         count: int | None,
     ) -> list[TdxBar]:
-        tdx_symbols = [to_tdx_code(symbol) for symbol in symbols]
+        tdx_symbols = [to_tdx_http_code(symbol) for symbol in symbols]
         native = await self.client.call(
             "get_market_data",
             {
@@ -66,7 +66,7 @@ class TdxDatasourceProvider:
     ) -> list[TdxSnapshot]:
         snapshots: list[TdxSnapshot] = []
         for symbol in symbols:
-            tdx_symbol = to_tdx_code(symbol)
+            tdx_symbol = to_tdx_http_code(symbol)
             native = await self.client.call(
                 "get_market_snapshot",
                 {

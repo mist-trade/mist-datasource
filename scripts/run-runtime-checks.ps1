@@ -5,9 +5,9 @@ param(
     [string]$BaseUrl = "http://127.0.0.1:9001",
     [string]$WsUrl = "",
     [string]$ClientId = "runtime-smoke",
-    [string]$Symbol = "688318.SH",
+    [string]$Symbol = "600519.SH",
     [string]$RawSymbol = "",
-    [string]$Sector = "880081.SH",
+    [string]$Sector = "通达信88",
     [string]$Period = "1d",
     [int]$Count = 2,
     [int]$TimeoutSeconds = 20,
@@ -80,12 +80,15 @@ function Write-Fail {
     Write-Host "  [FAIL] $Message" -ForegroundColor Red
 }
 
-function ConvertTo-TdxNativeSymbol {
+function ConvertTo-TdxHttpSymbol {
     param([string]$Symbol)
 
     $normalized = $Symbol.Trim().ToUpperInvariant()
     if ($normalized -match "^(?<code>\d{6})\.(?<market>SH|SZ)$") {
-        return "$($Matches.market)$($Matches.code)"
+        return "$($Matches.code).$($Matches.market)"
+    }
+    if ($normalized -match "^(?<market>SH|SZ)(?<code>\d{6})$") {
+        return "$($Matches.code).$($Matches.market)"
     }
     return $normalized
 }
@@ -592,7 +595,7 @@ function Test-WebSocketSmoke {
 }
 
 if (-not $RawSymbol) {
-    $RawSymbol = ConvertTo-TdxNativeSymbol -Symbol $Symbol
+    $RawSymbol = ConvertTo-TdxHttpSymbol -Symbol $Symbol
 }
 
 Write-Host "Mist datasource runtime checks" -ForegroundColor Cyan

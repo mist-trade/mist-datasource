@@ -26,12 +26,12 @@ class FakeTdxHttpClient:
 
 def native_bar_rows() -> dict[str, Any]:
     return {
-        "Open": {"SH600519": {"2026-06-26T09:31:00": "10.1"}},
-        "High": {"SH600519": {"2026-06-26T09:31:00": "10.3"}},
-        "Low": {"SH600519": {"2026-06-26T09:31:00": "10.0"}},
-        "Close": {"SH600519": {"2026-06-26T09:31:00": "10.2"}},
-        "Volume": {"SH600519": {"2026-06-26T09:31:00": "1200"}},
-        "Amount": {"SH600519": {"2026-06-26T09:31:00": "12345.6"}},
+        "Open": {"600519.SH": {"2026-06-26T09:31:00": "10.1"}},
+        "High": {"600519.SH": {"2026-06-26T09:31:00": "10.3"}},
+        "Low": {"600519.SH": {"2026-06-26T09:31:00": "10.0"}},
+        "Close": {"600519.SH": {"2026-06-26T09:31:00": "10.2"}},
+        "Volume": {"600519.SH": {"2026-06-26T09:31:00": "1200"}},
+        "Amount": {"600519.SH": {"2026-06-26T09:31:00": "12345.6"}},
     }
 
 
@@ -65,7 +65,7 @@ async def test_get_bars_calls_tdx_market_data_and_returns_normalized_rows():
         (
             "get_market_data",
             {
-                "stock_list": ["SH600519"],
+                "stock_list": ["600519.SH"],
                 "field_list": REQUIRED_MARKET_DATA_FIELDS,
                 "period": "1m",
                 "start_time": None,
@@ -90,7 +90,7 @@ async def test_get_snapshots_calls_tdx_snapshot_and_returns_normalized_snapshot(
         (
             "get_market_snapshot",
             {
-                "stock_code": "SH600519",
+                "stock_code": "600519.SH",
                 "field_list": [],
             },
         )
@@ -165,7 +165,7 @@ async def test_collect_recent_bars_uses_count_without_date_range():
         (
             "get_market_data",
             {
-                "stock_list": ["SH600519"],
+                "stock_list": ["600519.SH"],
                 "field_list": REQUIRED_MARKET_DATA_FIELDS,
                 "period": "1m",
                 "start_time": None,
@@ -190,7 +190,7 @@ async def test_health_reports_reachability_without_live_network_when_fake_client
         (
             "get_market_snapshot",
             {
-                "stock_code": "SH000001",
+                "stock_code": "600519.SH",
                 "field_list": [],
             },
         )

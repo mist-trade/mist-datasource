@@ -23,6 +23,10 @@ def to_tdx_code(symbol: str) -> str:
     return f"{market}{stock_code}"
 
 
+def to_tdx_http_code(symbol: str) -> str:
+    return normalize_symbol(symbol)
+
+
 def beijing_iso(value: str | datetime | None = None) -> str:
     if value is None:
         value = datetime.now(BEIJING_TZ)
