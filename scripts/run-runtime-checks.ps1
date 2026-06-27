@@ -12,9 +12,11 @@ param(
     [int]$Count = 2,
     [int]$TimeoutSeconds = 20,
     [int]$LiveBarTimeoutSeconds = 60,
+    [string]$TdxServiceName = "mist-tdx-datasource",
     [switch]$RunDatasourceInstall,
     [switch]$RunDatasourceStartupTest,
     [switch]$SkipScriptSelfTest,
+    [switch]$RequireScriptSelfTest,
     [switch]$SkipSdkPreflight,
     [switch]$SkipWinSWProbe,
     [switch]$SkipApplianceHealth,
@@ -132,6 +134,98 @@ function Invoke-ChildScript {
     & $shell -NoProfile -File $ScriptPath @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "$ScriptPath failed with exit code $LASTEXITCODE"
+    }
+}
+
+function Get-MissingSourceSelfTestFiles {
+    param(
+        [string]$RootDir,
+        [string]$SelfTestPath
+    )
+
+    $requiredFiles = @(
+        (Join-Path $RootDir ".env.windows.example"),
+        $SelfTestPath
+    )
+    $missing = @()
+    foreach ($file in $requiredFiles) {
+        if (-not (Test-Path $file -PathType Leaf)) {
+            $missing += $file
+        }
+    }
+    return $missing
+}
+
+function Get-TdxServiceLogPath {
+    if ($ApplianceRoot) {
+        return Join-Path $ApplianceRoot "datasource\logs\mist-tdx-datasource"
+    }
+    return Join-Path $DatasourceDir "logs\mist-tdx-datasource"
+}
+
+function Get-WindowsServiceState {
+    param([string]$Name)
+
+    if ([System.Environment]::OSVersion.Platform -ne "Win32NT") {
+        return [pscustomobject]@{
+            IsWindows = $false
+            Exists = $false
+            Status = "not-windows"
+            Name = $Name
+        }
+    }
+
+    $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
+    if (-not $service) {
+        return [pscustomobject]@{
+            IsWindows = $true
+            Exists = $false
+            Status = "missing"
+            Name = $Name
+        }
+    }
+
+    return [pscustomobject]@{
+        IsWindows = $true
+        Exists = $true
+        Status = [string]$service.Status
+        Name = $Name
+    }
+}
+
+function Write-TdxRuntimeDiagnostics {
+    param([object]$ServiceState)
+
+    $logPath = Get-TdxServiceLogPath
+    if ($ServiceState.IsWindows) {
+        if (-not $ServiceState.Exists) {
+            Write-Warn "Windows service '$($ServiceState.Name)' was not found."
+            Write-Warn "Install it with scripts\winsw\install-tdx-datasource.ps1 after TDX is logged in."
+        }
+        elseif ($ServiceState.Status -ne "Running") {
+            Write-Warn "Windows service '$($ServiceState.Name)' status is $($ServiceState.Status), not Running."
+            Write-Warn "Start it with: Start-Service -Name $($ServiceState.Name)"
+        }
+        else {
+            Write-Warn "Windows service '$($ServiceState.Name)' is Running but $BaseUrl/health did not respond."
+        }
+    }
+    else {
+        Write-Warn "Skipping Windows service status check on this platform."
+    }
+
+    Write-Warn "Check TDX terminal login/connection and clear conflicting strategy entries before restarting."
+    Write-Warn "Check datasource logs under: $logPath"
+}
+
+function Invoke-TdxHealthRequest {
+    try {
+        return Invoke-RestMethod -Method Get -Uri "$BaseUrl/health" -TimeoutSec $TimeoutSeconds
+    }
+    catch {
+        $serviceState = Get-WindowsServiceState -Name $TdxServiceName
+        Write-TdxRuntimeDiagnostics -ServiceState $serviceState
+        throw "TDX datasource HTTP is not reachable at $BaseUrl/health. Original error: $_"
     }
 }
 
@@ -273,7 +367,7 @@ function Assert-RawSnapshotResult {
 }
 
 function Test-HealthEndpoint {
-    $health = Invoke-RestMethod -Method Get -Uri "$BaseUrl/health" -TimeoutSec $TimeoutSeconds
+    $health = Invoke-TdxHealthRequest
     foreach ($key in @("status", "instance", "adapter", "tdxHttpReachable", "tqInitialized", "collectorState")) {
         Assert-PropertyExists -Object $health -Name $key
     }
@@ -468,8 +562,19 @@ $applianceHealthScript = if ($ApplianceRoot) { Join-Path $ApplianceRoot "health-
 
 try {
     if (-not $SkipScriptSelfTest) {
-        Invoke-RuntimeStep "Datasource script self-test" {
-            Invoke-ChildScript -ScriptPath $selfTestScript -Required
+        $missingSourceSelfTestFiles = @(Get-MissingSourceSelfTestFiles -RootDir $DatasourceDir -SelfTestPath $selfTestScript)
+        if ($missingSourceSelfTestFiles.Count -eq 0) {
+            Invoke-RuntimeStep "Datasource script self-test" {
+                Invoke-ChildScript -ScriptPath $selfTestScript -Required
+            }
+        }
+        elseif ($RequireScriptSelfTest) {
+            throw "Datasource script self-test requires source-tree files that are missing from this runtime package: $($missingSourceSelfTestFiles -join ', ')"
+        }
+        else {
+            Write-Step "Datasource script self-test"
+            Write-Warn "Skipped source-tree self-test because this runtime package is missing: $($missingSourceSelfTestFiles -join ', ')"
+            Write-Warn "Pass -RequireScriptSelfTest to fail instead."
         }
     }
 
@@ -493,6 +598,7 @@ try {
 
     if (-not $SkipWinSWProbe) {
         Invoke-RuntimeStep "TDX WinSW runtime probe" {
+            [void](Invoke-TdxHealthRequest)
             Invoke-ChildScript `
                 -ScriptPath $winswProbeScript `
                 -Arguments @("-BaseUrl", $BaseUrl, "-WsUrl", $WsUrl, "-Symbol", $Symbol) `
