@@ -346,6 +346,14 @@ TDX/Backend 的 WinSW 部署。
 .\scripts\run-runtime-checks.ps1 -RunDatasourceInstall -RunDatasourceStartupTest
 ```
 
+运行态总入口会检查 datasource health、provider manifest、TDX native HTTP
+shape、normalized bars/snapshots/sectors、Phase 1 calendar/security/sector-list/
+price-volume endpoints、WebSocket ping/pong，以及 appliance health。
+
+`/v1` normalized 请求默认使用 `provider=tdx`。如果显式传
+`provider=qmt`，当前会返回 `PROVIDER_CAPABILITY_UNSUPPORTED`，用于固定
+QMT 后续接入时的错误契约；Mist Windows appliance 目前仍不启动 QMT 服务。
+
 **重要提示**：重新启动 TDX 进程前，必须在通达信终端中**手动删除**已注册的策略，否则 `tq.initialize()` 会报 "已有同名策略运行" 导致初始化失败。策略标识为 `sdk_path/mist_datasource.py`。
 
 ## 许可证

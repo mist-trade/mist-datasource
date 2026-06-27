@@ -1,3 +1,4 @@
+from src.datasource.capabilities import ProviderCapabilityUnsupported
 from src.datasource.contracts import DatasourceError, ResponseEnvelope, ResponseMeta
 from src.datasource.tdx_models import TdxBarQueryRequest, TdxWsMessage
 
@@ -94,3 +95,21 @@ def test_tdx_ws_message_uses_structured_meta_and_error_models():
     assert isinstance(message.meta, ResponseMeta)
     assert payload["error"]["code"] == "X"
     assert payload["meta"]["asOf"] == "2026-06-26T10:00:00+08:00"
+
+
+def test_provider_capability_unsupported_has_stable_error_shape():
+    error = ProviderCapabilityUnsupported(
+        provider="qmt",
+        family="formulas",
+        operation="formula_zb",
+        fallback="Use TDX provider or wait for QMT formula support.",
+    )
+
+    assert error.code == "PROVIDER_CAPABILITY_UNSUPPORTED"
+    assert error.retryable is False
+    assert error.details == {
+        "provider": "qmt",
+        "family": "formulas",
+        "operation": "formula_zb",
+        "fallback": "Use TDX provider or wait for QMT formula support.",
+    }

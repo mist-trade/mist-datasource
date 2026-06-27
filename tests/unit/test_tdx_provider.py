@@ -148,6 +148,113 @@ async def test_get_sector_members_accepts_tdx_http_value_wrapper():
 
 
 @pytest.mark.asyncio
+async def test_get_sector_list_calls_tdx_sector_list_method():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_sector_list": {
+                "ErrorId": "0",
+                "Value": [{"Code": "880081.SH", "Name": "通达信88"}],
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    sectors = await provider.get_sector_list(1)
+
+    assert sectors[0]["code"] == "880081.SH"
+    assert sectors[0]["name"] == "通达信88"
+    assert fake_client.calls == [("get_sector_list", {"list_type": 1})]
+
+
+@pytest.mark.asyncio
+async def test_get_trading_dates_calls_tdx_calendar_method():
+    fake_client = FakeTdxHttpClient(
+        {"get_trading_dates": {"ErrorId": "0", "Value": ["2026-06-25", "2026-06-26"]}}
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    dates = await provider.get_trading_dates("SH", count=2)
+
+    assert dates == ["2026-06-25", "2026-06-26"]
+    assert fake_client.calls == [
+        (
+            "get_trading_dates",
+            {
+                "market": "SH",
+                "start_time": "",
+                "end_time": "",
+                "count": 2,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_securities_calls_tdx_stock_list_method():
+    fake_client = FakeTdxHttpClient({"get_stock_list": {"Value": ["SH600519"]}})
+    provider = TdxDatasourceProvider(fake_client)
+
+    securities = await provider.get_securities("5")
+
+    assert securities[0]["symbol"] == "600519.SH"
+    assert fake_client.calls == [("get_stock_list", {"market": "5"})]
+
+
+@pytest.mark.asyncio
+async def test_get_security_info_combines_stock_and_more_info():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_stock_info": {"Name": "贵州茅台", "Market": "SH"},
+            "get_more_info": {"Industry": "白酒"},
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    securities = await provider.get_security_info(["600519.SH"])
+
+    assert securities[0]["symbol"] == "600519.SH"
+    assert securities[0]["name"] == "贵州茅台"
+    assert securities[0]["more"] == {"Industry": "白酒"}
+    assert fake_client.calls == [
+        ("get_stock_info", {"stock_code": "600519.SH"}),
+        ("get_more_info", {"stock_code": "600519.SH", "field_list": []}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_price_volume_calls_tdx_pricevol_method():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_pricevol": {
+                "Value": {
+                    "600519.SH": {
+                        "Now": "1168.63",
+                        "Volume": "1000",
+                        "Amount": "1168630",
+                    }
+                }
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_price_volume(["600519.SH"], fields=["price", "volume"])
+
+    assert items[0]["symbol"] == "600519.SH"
+    assert items[0]["price"] == 1168.63
+    assert items[0]["volume"] == 1000.0
+    assert fake_client.calls == [
+        (
+            "get_pricevol",
+            {
+                "stock_list": ["600519.SH"],
+                "field_list": ["price", "volume"],
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
 async def test_call_formula_passes_exact_formula_method_with_args_and_context():
     fake_response = {"value": 10.2}
     fake_client = FakeTdxHttpClient({"formula_exp": fake_response})

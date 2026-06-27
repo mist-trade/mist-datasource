@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -71,6 +71,7 @@ class TdxSnapshot(TdxModel):
 
 
 class TdxBarQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
     symbols: list[str]
     period: str
     start_time: str | None = Field(default=None, alias="startTime")
@@ -85,9 +86,41 @@ class TdxBarQueryRequest(TdxModel):
 
 
 class TdxSnapshotQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
     symbols: list[str]
     fields: list[str] | None = None
     include_raw: bool = Field(default=False, alias="includeRaw")
+
+
+class TdxPriceVolumeQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    symbols: list[str]
+    fields: list[str] | None = None
+    include_raw: bool = Field(default=False, alias="includeRaw")
+
+
+class TdxTradingDatesQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    market: str = "SH"
+    start_time: str | None = Field(default=None, alias="startTime")
+    end_time: str | None = Field(default=None, alias="endTime")
+    count: int | None = None
+
+
+class TdxSecuritiesQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    market: str = "5"
+
+
+class TdxSecurityInfoQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    symbols: list[str]
+    include_raw: bool = Field(default=True, alias="includeRaw")
+
+
+class TdxSectorListQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    list_type: int = Field(default=0, alias="listType")
 
 
 class RawTdxCallRequest(TdxModel):

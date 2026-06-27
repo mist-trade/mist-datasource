@@ -419,8 +419,26 @@ function Test-HealthEndpoint {
     }
 }
 
+function Test-ProviderManifest {
+    $providers = Invoke-RestMethod -Method Get -Uri "$BaseUrl/providers" -TimeoutSec $TimeoutSeconds
+    Assert-EnvelopeOk -Envelope $providers -Name "provider manifest"
+    Assert-ArrayNotEmpty -Value $providers.data.providers -Name "providers"
+
+    $providerIds = @($providers.data.providers | ForEach-Object { $_.id })
+    foreach ($providerId in @("tdx", "qmt")) {
+        if ($providerIds -notcontains $providerId) {
+            throw "Provider manifest is missing provider '$providerId'."
+        }
+    }
+
+    foreach ($provider in $providers.data.providers) {
+        Assert-ArrayNotEmpty -Value $provider.capabilities -Name "$($provider.id) capabilities"
+    }
+}
+
 function Test-BasicTdxSmoke {
     Test-HealthEndpoint
+    Test-ProviderManifest
 
     $rawBars = Invoke-JsonPost `
         -Uri "$BaseUrl/v1/raw/tdx/call" `
@@ -471,6 +489,36 @@ function Test-BasicTdxSmoke {
         -Payload @{ sector = $Sector }
     Assert-EnvelopeOk -Envelope $sectors -Name "sector query"
     Assert-ArrayNotEmpty -Value $sectors.data.symbols -Name "sector symbols"
+
+    $sectorList = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/sectors/list/query" `
+        -Payload @{ listType = 1 }
+    Assert-EnvelopeOk -Envelope $sectorList -Name "sector list query"
+    Assert-ArrayNotEmpty -Value $sectorList.data.sectors -Name "sector list"
+
+    $tradingDates = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/calendar/trading-dates/query" `
+        -Payload @{ market = "SH"; count = $Count }
+    Assert-EnvelopeOk -Envelope $tradingDates -Name "trading dates query"
+    Assert-ArrayNotEmpty -Value $tradingDates.data.tradingDates -Name "trading dates"
+
+    $securities = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/securities/query" `
+        -Payload @{ market = "5" }
+    Assert-EnvelopeOk -Envelope $securities -Name "securities query"
+    Assert-ArrayNotEmpty -Value $securities.data.securities -Name "securities"
+
+    $securityInfo = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/securities/info/query" `
+        -Payload @{ symbols = @($Symbol) }
+    Assert-EnvelopeOk -Envelope $securityInfo -Name "security info query"
+    Assert-ArrayNotEmpty -Value $securityInfo.data.securities -Name "security info"
+
+    $priceVolume = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/price-volume/query" `
+        -Payload @{ symbols = @($Symbol); fields = @("price", "volume", "amount") }
+    Assert-EnvelopeOk -Envelope $priceVolume -Name "price-volume query"
+    Assert-ArrayNotEmpty -Value $priceVolume.data.items -Name "price-volume items"
 }
 
 function Receive-WebSocketText {

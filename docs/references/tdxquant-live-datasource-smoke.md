@@ -2,6 +2,12 @@
 
 Captured from the official TdxQuant documentation on 2026-06-27.
 
+Coverage matrix:
+`docs/references/tdxquant-interface-coverage.md`.
+
+Related broader page capture:
+`docs/references/tdxquant-official-page-capture-2026-06-27.md`.
+
 This file records only the TDX APIs needed to design and maintain a fast
 Windows live smoke test for `mist-datasource`. It is intentionally scoped to the
 datasource gateway path:

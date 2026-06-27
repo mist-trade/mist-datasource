@@ -13,6 +13,11 @@ class FakeTdxProvider:
     def __init__(self) -> None:
         self.raw_calls: list[tuple[str, dict[str, Any]]] = []
         self.sector_queries: list[str] = []
+        self.sector_list_queries: list[int] = []
+        self.security_list_queries: list[str] = []
+        self.security_info_queries: list[list[str]] = []
+        self.trading_date_queries: list[tuple[str, str | None, str | None, int | None]] = []
+        self.price_volume_queries: list[tuple[list[str], list[str] | None]] = []
         self.formula_calls: list[tuple[str, Any, Any]] = []
         self.fail_bars = False
 
@@ -76,6 +81,58 @@ class FakeTdxProvider:
     async def get_sector_members(self, sector: str) -> list[str]:
         self.sector_queries.append(sector)
         return ["600519.SH", "000001.SZ"]
+
+    async def get_sector_list(self, list_type: int = 0) -> list[dict[str, Any]]:
+        self.sector_list_queries.append(list_type)
+        return [
+            {"code": "880081.SH", "name": "通达信88", "provider": "tdx"},
+            {"code": "880300.SH", "name": "沪深300", "provider": "tdx"},
+        ]
+
+    async def get_trading_dates(
+        self,
+        market: str,
+        start_time: str | None,
+        end_time: str | None,
+        count: int | None,
+    ) -> list[str]:
+        self.trading_date_queries.append((market, start_time, end_time, count))
+        return ["2026-06-25", "2026-06-26"]
+
+    async def get_securities(self, market: str) -> list[dict[str, Any]]:
+        self.security_list_queries.append(market)
+        return [
+            {"symbol": "600519.SH", "name": "贵州茅台", "provider": "tdx"},
+            {"symbol": "000001.SZ", "name": "平安银行", "provider": "tdx"},
+        ]
+
+    async def get_security_info(self, symbols: list[str]) -> list[dict[str, Any]]:
+        self.security_info_queries.append(symbols)
+        return [
+            {
+                "symbol": symbols[0],
+                "name": "贵州茅台",
+                "market": "SH",
+                "provider": "tdx",
+                "raw": {"Code": symbols[0]},
+            }
+        ]
+
+    async def get_price_volume(
+        self,
+        symbols: list[str],
+        fields: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        self.price_volume_queries.append((symbols, fields))
+        return [
+            {
+                "symbol": symbols[0],
+                "price": 1168.63,
+                "volume": 1000.0,
+                "amount": 1168630.0,
+                "provider": "tdx",
+            }
+        ]
 
     async def call_formula(
         self,
@@ -158,6 +215,98 @@ async def test_providers_returns_tdx_provider_envelope(v1_client: AsyncClient) -
 
 
 @pytest.mark.asyncio
+async def test_providers_returns_tdx_and_qmt_capability_manifests(
+    v1_client: AsyncClient,
+) -> None:
+    response = await v1_client.get("/providers")
+
+    assert response.status_code == 200
+    body = response.json()
+    providers = {provider["id"]: provider for provider in body["data"]["providers"]}
+
+    assert set(providers) == {"tdx", "qmt"}
+
+    tdx_families = {
+        capability["family"]: capability["status"]
+        for capability in providers["tdx"]["capabilities"]
+    }
+    qmt_families = {
+        capability["family"]: capability["status"]
+        for capability in providers["qmt"]["capabilities"]
+    }
+
+    assert set(tdx_families) == set(qmt_families)
+    assert tdx_families["bars"] == "supported"
+    assert tdx_families["snapshots"] == "supported"
+    assert tdx_families["sector-members"] == "supported"
+    assert tdx_families["calendar"] == "supported"
+    assert tdx_families["securities"] == "supported"
+    assert tdx_families["security-info"] == "supported"
+    assert tdx_families["sector-list"] == "supported"
+    assert tdx_families["price-volume"] == "supported"
+    assert tdx_families["formulas"] == "planned"
+    assert qmt_families["bars"] in {"supported", "planned", "unsupported"}
+    assert qmt_families["formulas"] == "unsupported"
+
+
+@pytest.mark.parametrize(
+    ("path", "payload", "family", "operation"),
+    [
+        (
+            "/v1/calendar/trading-dates/query",
+            {"provider": "qmt", "market": "SH", "count": 2},
+            "calendar",
+            "trading-dates/query",
+        ),
+        (
+            "/v1/securities/query",
+            {"provider": "qmt", "market": "5"},
+            "securities",
+            "securities/query",
+        ),
+        (
+            "/v1/securities/info/query",
+            {"provider": "qmt", "symbols": ["600519.SH"]},
+            "security-info",
+            "securities/info/query",
+        ),
+        (
+            "/v1/sectors/list/query",
+            {"provider": "qmt", "listType": 1},
+            "sector-list",
+            "sectors/list/query",
+        ),
+        (
+            "/v1/price-volume/query",
+            {"provider": "qmt", "symbols": ["600519.SH"]},
+            "price-volume",
+            "price-volume/query",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_qmt_provider_requests_return_capability_unsupported(
+    v1_client: AsyncClient,
+    path: str,
+    payload: dict[str, Any],
+    family: str,
+    operation: str,
+) -> None:
+    response = await v1_client.post(path, json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+    assert body["provider"] == "qmt"
+    assert body["data"] is None
+    assert body["error"]["code"] == "PROVIDER_CAPABILITY_UNSUPPORTED"
+    assert body["error"]["retryable"] is False
+    assert body["error"]["details"]["provider"] == "qmt"
+    assert body["error"]["details"]["family"] == family
+    assert body["error"]["details"]["operation"] == operation
+
+
+@pytest.mark.asyncio
 async def test_bars_query_returns_normalized_envelope(v1_client: AsyncClient) -> None:
     response = await v1_client.post(
         "/v1/bars/query",
@@ -220,6 +369,82 @@ async def test_sectors_query_returns_symbols(v1_client: AsyncClient) -> None:
     assert body["ok"] is True
     assert body["data"]["symbols"] == ["600519.SH", "000001.SZ"]
     assert tdx.main.tdx_provider.sector_queries == ["通达信88"]
+
+
+@pytest.mark.asyncio
+async def test_sector_list_query_returns_normalized_sectors(v1_client: AsyncClient) -> None:
+    import tdx.main
+
+    response = await v1_client.post("/v1/sectors/list/query", json={"listType": 1})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["sectors"][0]["code"] == "880081.SH"
+    assert tdx.main.tdx_provider.sector_list_queries == [1]
+
+
+@pytest.mark.asyncio
+async def test_calendar_query_returns_trading_dates(v1_client: AsyncClient) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/calendar/trading-dates/query",
+        json={"market": "SH", "count": 2},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["tradingDates"] == ["2026-06-25", "2026-06-26"]
+    assert tdx.main.tdx_provider.trading_date_queries == [("SH", None, None, 2)]
+
+
+@pytest.mark.asyncio
+async def test_securities_query_returns_normalized_symbols(v1_client: AsyncClient) -> None:
+    import tdx.main
+
+    response = await v1_client.post("/v1/securities/query", json={"market": "5"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["securities"][0]["symbol"] == "600519.SH"
+    assert tdx.main.tdx_provider.security_list_queries == ["5"]
+
+
+@pytest.mark.asyncio
+async def test_security_info_query_returns_normalized_metadata(v1_client: AsyncClient) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/securities/info/query",
+        json={"symbols": ["600519.SH"]},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["securities"][0]["name"] == "贵州茅台"
+    assert tdx.main.tdx_provider.security_info_queries == [["600519.SH"]]
+
+
+@pytest.mark.asyncio
+async def test_price_volume_query_returns_normalized_items(v1_client: AsyncClient) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/price-volume/query",
+        json={"symbols": ["600519.SH"], "fields": ["price", "volume"]},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["items"][0]["price"] == 1168.63
+    assert tdx.main.tdx_provider.price_volume_queries == [
+        (["600519.SH"], ["price", "volume"])
+    ]
 
 
 @pytest.mark.asyncio
