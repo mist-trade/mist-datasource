@@ -669,9 +669,38 @@ async def test_get_single_finance_values_calls_gp_one_data_and_flattens_fields()
             "get_gp_one_data",
             {
                 "stock_list": ["688318.SH"],
-                "field_list": ["GO1", "GO2"],
+                "table_list": ["GO1", "GO2"],
             },
         )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_single_finance_values_accepts_symbol_first_tdx_shape():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_gp_one_data": {
+                "ErrorId": "0",
+                "Value": {
+                    "688318.SH": {
+                        "GO1": "0.00",
+                    }
+                },
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_single_finance_values(["688318.SH"], ["GO1"])
+
+    assert items == [
+        {
+            "symbol": "688318.SH",
+            "field": "GO1",
+            "value": 0.0,
+            "provider": "tdx",
+            "raw": {"688318.SH": {"GO1": "0.00"}},
+        }
     ]
 
 

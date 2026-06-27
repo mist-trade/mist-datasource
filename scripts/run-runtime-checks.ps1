@@ -8,7 +8,18 @@ param(
     [string]$Symbol = "600519.SH",
     [string]$RawSymbol = "",
     [string]$Sector = "通达信88",
+    [string]$SectorTradeCode = "880081.SH",
+    [string]$ConvertibleBondSymbol = "123039.SZ",
+    [string]$TrackingEtfIndexSymbol = "950162.CSI",
     [string]$FinanceField = "GO1",
+    [string]$FinancialDataField = "FN193",
+    [string]$FinancialDataByDateField = "FN194",
+    [string]$StockTradeField = "GP3",
+    [string]$StockTradeByDateField = "GP1",
+    [string]$SectorTradeField = "BK5",
+    [string]$SectorTradeByDateField = "BK9",
+    [string]$MarketTradeField = "SC1",
+    [string]$MarketTradeByDateField = "SC10",
     [string]$Period = "1d",
     [int]$Count = 2,
     [int]$TimeoutSeconds = 20,
@@ -584,11 +595,29 @@ function Test-FinanceReportSmoke {
             method = "get_gp_one_data"
             params = @{
                 stock_list = @($RawSymbol)
-                field_list = @($FinanceField)
+                table_list = @($FinanceField)
             }
         }
     Assert-EnvelopeOk -Envelope $rawFinance -Name "raw get_gp_one_data"
     Assert-RawGpOneDataResult -Result $rawFinance.data.result -Symbol $RawSymbol -Field $FinanceField
+
+    $financialData = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/finance/financial-data/query" `
+        -Payload @{
+            symbols = @($Symbol)
+            fields = @($FinancialDataField)
+            startTime = "20250101"
+            endTime = "20251231"
+            reportType = "tag_time"
+        }
+    Assert-EnvelopeOk -Envelope $financialData -Name "financial data query"
+    Assert-PropertyExists -Object $financialData.data -Name "items"
+
+    $financialDataByDate = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/finance/financial-data/by-date/query" `
+        -Payload @{ symbols = @($Symbol); fields = @($FinancialDataByDateField); year = 0; mmdd = 0 }
+    Assert-EnvelopeOk -Envelope $financialDataByDate -Name "financial data by date query"
+    Assert-PropertyExists -Object $financialDataByDate.data -Name "items"
 
     $finance = Invoke-JsonPost `
         -Uri "$BaseUrl/v1/finance/single-data/query" `
@@ -598,9 +627,77 @@ function Test-FinanceReportSmoke {
     foreach ($field in @("symbol", "field", "value")) {
         Assert-PropertyExists -Object $finance.data.items[0] -Name $field
     }
+
+    $stockTrade = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/reports/stock-trade/query" `
+        -Payload @{
+            symbols = @($Symbol)
+            fields = @($StockTradeField)
+            startTime = "20250101"
+            endTime = "20250102"
+        }
+    Assert-EnvelopeOk -Envelope $stockTrade -Name "stock trade aggregate query"
+    Assert-PropertyExists -Object $stockTrade.data -Name "items"
+
+    $stockTradeByDate = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/reports/stock-trade/by-date/query" `
+        -Payload @{ symbols = @($Symbol); fields = @($StockTradeByDateField); year = 0; mmdd = 0 }
+    Assert-EnvelopeOk -Envelope $stockTradeByDate -Name "stock trade aggregate by date query"
+    Assert-PropertyExists -Object $stockTradeByDate.data -Name "items"
+
+    $sectorTrade = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/reports/sector-trade/query" `
+        -Payload @{
+            sectorCodes = @($SectorTradeCode)
+            fields = @($SectorTradeField)
+            startTime = "20250101"
+            endTime = "20250102"
+        }
+    Assert-EnvelopeOk -Envelope $sectorTrade -Name "sector trade aggregate query"
+    Assert-PropertyExists -Object $sectorTrade.data -Name "items"
+
+    $sectorTradeByDate = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/reports/sector-trade/by-date/query" `
+        -Payload @{ sectorCodes = @($SectorTradeCode); fields = @($SectorTradeByDateField); year = 0; mmdd = 0 }
+    Assert-EnvelopeOk -Envelope $sectorTradeByDate -Name "sector trade aggregate by date query"
+    Assert-PropertyExists -Object $sectorTradeByDate.data -Name "items"
+
+    $marketTrade = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/reports/market-trade/query" `
+        -Payload @{
+            fields = @($MarketTradeField)
+            startTime = "20250101"
+            endTime = "20250102"
+        }
+    Assert-EnvelopeOk -Envelope $marketTrade -Name "market trade aggregate query"
+    Assert-PropertyExists -Object $marketTrade.data -Name "items"
+
+    $marketTradeByDate = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/reports/market-trade/by-date/query" `
+        -Payload @{ fields = @($MarketTradeByDateField); year = 0; mmdd = 0 }
+    Assert-EnvelopeOk -Envelope $marketTradeByDate -Name "market trade aggregate by date query"
+    Assert-PropertyExists -Object $marketTradeByDate.data -Name "items"
+
+    $reportData = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/reports/data/query" `
+        -Payload @{ symbol = $Symbol }
+    Assert-EnvelopeOk -Envelope $reportData -Name "report data query"
+    Assert-PropertyExists -Object $reportData.data -Name "items"
 }
 
 function Test-ReferenceInstrumentSmoke {
+    $relations = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/reference/relations/query" `
+        -Payload @{ symbol = $Symbol }
+    Assert-EnvelopeOk -Envelope $relations -Name "relations query"
+    Assert-PropertyExists -Object $relations.data -Name "relations"
+
+    $ipo = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/reference/ipo/query" `
+        -Payload @{ ipoType = 0; ipoDate = 0 }
+    Assert-EnvelopeOk -Envelope $ipo -Name "IPO query"
+    Assert-PropertyExists -Object $ipo.data -Name "items"
+
     $rawShareCapital = Invoke-JsonPost `
         -Uri "$BaseUrl/v1/raw/tdx/call" `
         -Payload @{
@@ -619,6 +716,28 @@ function Test-ReferenceInstrumentSmoke {
         -Payload @{ symbol = $Symbol; count = 1 }
     Assert-EnvelopeOk -Envelope $shareCapital -Name "share-capital query"
     Assert-ArrayNotEmpty -Value $shareCapital.data.items -Name "share-capital items"
+
+    $dividendFactors = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/reference/dividend-factors/query" `
+        -Payload @{ symbol = $Symbol }
+    Assert-EnvelopeOk -Envelope $dividendFactors -Name "dividend factors query"
+    Assert-PropertyExists -Object $dividendFactors.data -Name "items"
+
+    $convertibleBonds = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/instruments/convertible-bonds/query" `
+        -Payload @{
+            symbol = $ConvertibleBondSymbol
+            fields = @("KZZCode", "HSCode")
+            nativeMethod = "get_kzz_info"
+        }
+    Assert-EnvelopeOk -Envelope $convertibleBonds -Name "convertible bonds query"
+    Assert-PropertyExists -Object $convertibleBonds.data -Name "items"
+
+    $trackingEtfs = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/instruments/tracking-etfs/query" `
+        -Payload @{ indexSymbol = $TrackingEtfIndexSymbol }
+    Assert-EnvelopeOk -Envelope $trackingEtfs -Name "tracking ETFs query"
+    Assert-PropertyExists -Object $trackingEtfs.data -Name "items"
 }
 
 function Test-FormulaSmoke {
@@ -773,6 +892,7 @@ Write-Host "  WsUrl:         $WsUrl"
 Write-Host "  Symbol:        $Symbol"
 Write-Host "  RawSymbol:     $RawSymbol"
 Write-Host "  Sector:        $Sector"
+Write-Host "  SectorTrade:   $SectorTradeCode"
 Write-Host "  FinanceField:  $FinanceField"
 
 $selfTestScript = Join-Path $DatasourceDir "scripts\test_windows_scripts.ps1"

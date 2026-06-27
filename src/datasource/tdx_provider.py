@@ -315,7 +315,7 @@ class TdxDatasourceProvider:
             "get_gp_one_data",
             {
                 "stock_list": tdx_symbols,
-                "field_list": fields,
+                "table_list": fields,
             },
         )
         return _normalize_single_finance_value_items(tdx_symbols, fields, native)
