@@ -88,3 +88,22 @@ service design.
 Client-control, file, message, refresh, and mutation-style utility methods are
 not ordinary read-data APIs. Treat them as admin-only or do-not-expose unless a
 separate operator workflow is designed.
+
+## Phase 2 Normalized Endpoint Capture
+
+Implemented after this capture using the reviewed official pages and coverage
+matrix:
+
+| Normalized endpoint | Primary TDX methods |
+| --- | --- |
+| `/v1/reference/relations/query` | `get_relation` |
+| `/v1/reference/ipo/query` | `get_ipo_info` |
+| `/v1/reference/share-capital/query` | `get_gb_info`, `get_gb_info_by_date` |
+| `/v1/reference/dividend-factors/query` | `get_divid_factors` |
+| `/v1/instruments/convertible-bonds/query` | `get_kzz_info`, compatibility `get_cb_info` |
+| `/v1/instruments/tracking-etfs/query` | `get_trackzs_etf_info` |
+
+The root-level `TDX.md` and `QMT.md` snapshots were removed as stale. Future
+shape changes should be captured here or in the coverage matrix after checking
+current official pages. Convertible-bond and ETF live return shapes still need
+Windows smoke confirmation before backend product code relies on narrow fields.

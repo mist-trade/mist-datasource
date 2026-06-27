@@ -11,11 +11,17 @@ from src.datasource.tdx_http_client import TdxHttpError
 from src.datasource.tdx_models import (
     RawTdxCallRequest,
     TdxBarQueryRequest,
+    TdxConvertibleBondInfoQueryRequest,
+    TdxDividendFactorsQueryRequest,
+    TdxIpoInfoQueryRequest,
     TdxPriceVolumeQueryRequest,
     TdxSectorListQueryRequest,
     TdxSecuritiesQueryRequest,
     TdxSecurityInfoQueryRequest,
+    TdxSecurityRelationsQueryRequest,
+    TdxShareCapitalQueryRequest,
     TdxSnapshotQueryRequest,
+    TdxTrackingEtfsQueryRequest,
     TdxTradingDatesQueryRequest,
 )
 
@@ -282,6 +288,104 @@ async def query_sector_list(payload: TdxSectorListQueryRequest, request: Request
         provider_id=payload.provider,
         capability_family="sector-list",
         operation_name="sectors/list/query",
+    )
+
+
+@router.post("/v1/reference/relations/query")
+async def query_security_relations(payload: TdxSecurityRelationsQueryRequest, request: Request):
+    return await _call_provider(
+        request,
+        lambda provider: _wrap("relations", provider.get_security_relations(payload.symbol)),
+        provider_id=payload.provider,
+        capability_family="security-relations",
+        operation_name="reference/relations/query",
+    )
+
+
+@router.post("/v1/reference/ipo/query")
+async def query_ipo_info(payload: TdxIpoInfoQueryRequest, request: Request):
+    return await _call_provider(
+        request,
+        lambda provider: _wrap("items", provider.get_ipo_info(payload.ipo_type, payload.ipo_date)),
+        provider_id=payload.provider,
+        capability_family="ipo-info",
+        operation_name="reference/ipo/query",
+    )
+
+
+@router.post("/v1/reference/share-capital/query")
+async def query_share_capital(payload: TdxShareCapitalQueryRequest, request: Request):
+    async def operation(provider):
+        if payload.start_date or payload.end_date:
+            return await _wrap(
+                "items",
+                provider.get_share_capital_by_date(
+                    payload.symbol,
+                    payload.start_date or "",
+                    payload.end_date or "",
+                ),
+            )
+        return await _wrap(
+            "items",
+            provider.get_share_capital(payload.symbol, payload.date_list, payload.count),
+        )
+
+    return await _call_provider(
+        request,
+        operation,
+        provider_id=payload.provider,
+        capability_family="share-capital",
+        operation_name="reference/share-capital/query",
+    )
+
+
+@router.post("/v1/reference/dividend-factors/query")
+async def query_dividend_factors(payload: TdxDividendFactorsQueryRequest, request: Request):
+    return await _call_provider(
+        request,
+        lambda provider: _wrap(
+            "items",
+            provider.get_dividend_factors(
+                payload.symbol,
+                payload.start_time,
+                payload.end_time,
+            ),
+        ),
+        provider_id=payload.provider,
+        capability_family="dividend-factors",
+        operation_name="reference/dividend-factors/query",
+    )
+
+
+@router.post("/v1/instruments/convertible-bonds/query")
+async def query_convertible_bonds(
+    payload: TdxConvertibleBondInfoQueryRequest,
+    request: Request,
+):
+    return await _call_provider(
+        request,
+        lambda provider: _wrap(
+            "items",
+            provider.get_convertible_bond_info(
+                payload.symbol,
+                fields=payload.fields,
+                native_method=payload.native_method,
+            ),
+        ),
+        provider_id=payload.provider,
+        capability_family="convertible-bonds",
+        operation_name="instruments/convertible-bonds/query",
+    )
+
+
+@router.post("/v1/instruments/tracking-etfs/query")
+async def query_tracking_etfs(payload: TdxTrackingEtfsQueryRequest, request: Request):
+    return await _call_provider(
+        request,
+        lambda provider: _wrap("items", provider.get_tracking_etfs(payload.index_symbol)),
+        provider_id=payload.provider,
+        capability_family="etf-info",
+        operation_name="instruments/tracking-etfs/query",
     )
 
 

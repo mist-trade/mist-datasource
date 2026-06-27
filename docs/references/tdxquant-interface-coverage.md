@@ -51,14 +51,14 @@ Related references:
 
 | TDX method | Source | Classification | Endpoint family | QMT alignment | Test strategy |
 | --- | --- | --- | --- | --- | --- |
-| `get_relation` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1ctuhthaq5qmg/mindoc-1h84ec4p26qus.html> | `normalized-phase-2` | `security-relations` | QMT equivalent unknown; manifest explicit. | Fixture and normalized relation response. |
-| `get_ipo_info` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1ctuhthaq5qmg/mindoc-1h137jr3khrqo.html> | `normalized-phase-2` | `ipo-info` | QMT equivalent unknown. | Fixture, date filtering contract. |
-| `get_gb_info` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1ctuhthaq5qmg/mindoc-1h3ru0b1tssrc.html> | `normalized-phase-2` | `share-capital` | QMT equivalent unknown. | Fixture and normalized numeric/date coercion. |
-| `get_gb_info_by_date` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1ctuhthaq5qmg/mindoc-1hc4303vsv1fk.html> | `normalized-phase-2` | `share-capital` | QMT equivalent unknown. | Fixture and date-range contract. |
-| `get_divid_factors` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1ctuhthaq5qmg/mindoc-1h10hsiat36k4.html> | `normalized-phase-2` | `dividend-factors` | QMT equivalent unknown. | Fixture and factor normalization. |
-| `get_kzz_info` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h13a594nhvb4/mindoc-1h137euvcjn98.html> | `normalized-phase-2` | `convertible-bonds` | QMT equivalent unknown. | Fixture and normalized instrument response. |
-| `get_cb_info` | Official docs content; no stable nav page found in route scrape. | `normalized-phase-2` after live verification | `convertible-bonds` | QMT equivalent unknown. | Live probe first, then fixture. |
-| `get_trackzs_etf_info` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h13a594nhvb4/mindoc-1h6hknp6pjppc.html> | `normalized-phase-2` | `etf-info` | QMT equivalent unknown. | Fixture and normalized ETF response. |
+| `get_relation` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1ctuhthaq5qmg/mindoc-1h84ec4p26qus.html> | `normalized-now` | `security-relations` via `/v1/reference/relations/query` | QMT returns `PROVIDER_CAPABILITY_UNSUPPORTED` until mapping is verified. | Fixture and normalized relation response. |
+| `get_ipo_info` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1ctuhthaq5qmg/mindoc-1h137jr3khrqo.html> | `normalized-now` | `ipo-info` via `/v1/reference/ipo/query` | QMT returns unsupported until mapping is verified. | Fixture, date filtering contract. |
+| `get_gb_info` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1ctuhthaq5qmg/mindoc-1h3ru0b1tssrc.html> | `normalized-now` | `share-capital` via `/v1/reference/share-capital/query` | QMT returns unsupported until mapping is verified. | Fixture and normalized numeric/date coercion. |
+| `get_gb_info_by_date` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1ctuhthaq5qmg/mindoc-1hc4303vsv1fk.html> | `normalized-now` | `share-capital` via `/v1/reference/share-capital/query` | QMT returns unsupported until mapping is verified. | Fixture and date-range contract. |
+| `get_divid_factors` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1ctuhthaq5qmg/mindoc-1h10hsiat36k4.html> | `normalized-now` | `dividend-factors` via `/v1/reference/dividend-factors/query` | QMT returns unsupported until mapping is verified. | Fixture and factor normalization. |
+| `get_kzz_info` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h13a594nhvb4/mindoc-1h137euvcjn98.html> | `normalized-now` | `convertible-bonds` via `/v1/instruments/convertible-bonds/query` | QMT returns unsupported until mapping is verified. | Fixture and normalized instrument response; live shape still needs Windows smoke. |
+| `get_cb_info` | Official docs content; no stable nav page found in route scrape. | `normalized-now` as compatibility native method after live verification | `convertible-bonds` via `/v1/instruments/convertible-bonds/query` with `nativeMethod=get_cb_info` | QMT returns unsupported until mapping is verified. | Fixture and live probe before product use. |
+| `get_trackzs_etf_info` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h13a594nhvb4/mindoc-1h6hknp6pjppc.html> | `normalized-now` | `etf-info` via `/v1/instruments/tracking-etfs/query` | QMT returns unsupported until mapping is verified. | Fixture and normalized ETF response; live shape still needs Windows smoke. |
 
 ## Phase 3: Finance And Report Data
 

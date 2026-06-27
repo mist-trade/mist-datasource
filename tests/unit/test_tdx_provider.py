@@ -255,6 +255,211 @@ async def test_get_price_volume_calls_tdx_pricevol_method():
 
 
 @pytest.mark.asyncio
+async def test_get_security_relations_calls_tdx_relation_method():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_relation": {
+                "Value": {
+                    "RelatedSectors": [
+                        {"Code": "880081.SH", "Name": "通达信88", "Type": "industry"}
+                    ]
+                }
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    relations = await provider.get_security_relations("600519.SH")
+
+    assert relations == [
+        {
+            "symbol": "600519.SH",
+            "category": "industry",
+            "code": "880081.SH",
+            "name": "通达信88",
+            "provider": "tdx",
+            "raw": {"Code": "880081.SH", "Name": "通达信88", "Type": "industry"},
+        }
+    ]
+    assert fake_client.calls == [("get_relation", {"stock_code": "600519.SH"})]
+
+
+@pytest.mark.asyncio
+async def test_get_ipo_info_calls_tdx_ipo_method_and_normalizes_items():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_ipo_info": {
+                "Value": [
+                    {
+                        "code": "301036",
+                        "name": "双乐转债",
+                        "SGCode": "371036",
+                        "SGDate": "20251226",
+                        "SGPrice": "100.00",
+                    }
+                ]
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_ipo_info(ipo_type=2, ipo_date=1)
+
+    assert items[0]["code"] == "301036"
+    assert items[0]["subscribeCode"] == "371036"
+    assert items[0]["subscribeDate"] == "20251226"
+    assert items[0]["issuePrice"] == 100.0
+    assert fake_client.calls == [("get_ipo_info", {"ipo_type": 2, "ipo_date": 1})]
+
+
+@pytest.mark.asyncio
+async def test_get_share_capital_calls_tdx_gb_info_method():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_gb_info": {
+                "Value": [
+                    {"Date": 20250101, "Zgb": "182942480", "Ltgb": "182942480"}
+                ]
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_share_capital("600519.SH", ["20250101"], 1)
+
+    assert items[0]["symbol"] == "600519.SH"
+    assert items[0]["date"] == "20250101"
+    assert items[0]["totalShareCapital"] == 182942480.0
+    assert items[0]["floatShareCapital"] == 182942480.0
+    assert fake_client.calls == [
+        (
+            "get_gb_info",
+            {
+                "stock_code": "600519.SH",
+                "date_list": ["20250101"],
+                "count": 1,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_share_capital_by_date_calls_tdx_gb_info_by_date_method():
+    fake_client = FakeTdxHttpClient(
+        {"get_gb_info_by_date": {"Value": [{"Date": "20250101", "Zgb": 1, "Ltgb": 2}]}}
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    await provider.get_share_capital_by_date("600519.SH", "20250101", "20250601")
+
+    assert fake_client.calls == [
+        (
+            "get_gb_info_by_date",
+            {
+                "stock_code": "600519.SH",
+                "start_date": "20250101",
+                "end_date": "20250601",
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_dividend_factors_calls_tdx_divid_method():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_divid_factors": {
+                "Value": [
+                    {
+                        "Date": "20250101",
+                        "Type": "1",
+                        "Bonus": "1.23",
+                        "ShareBonus": "0.5",
+                    }
+                ]
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_dividend_factors("600519.SH", "20250101", "20251231")
+
+    assert items[0]["symbol"] == "600519.SH"
+    assert items[0]["bonus"] == 1.23
+    assert items[0]["shareBonus"] == 0.5
+    assert fake_client.calls == [
+        (
+            "get_divid_factors",
+            {
+                "stock_code": "600519.SH",
+                "start_time": "20250101",
+                "end_time": "20251231",
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_convertible_bond_info_calls_selected_tdx_method():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_kzz_info": {
+                "Value": {
+                    "KZZCode": "123039",
+                    "HSCode": "300577",
+                    "ZGPrice": "29.15",
+                    "KZZPrice": "120.50",
+                }
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_convertible_bond_info(
+        "123039.SZ",
+        fields=["KZZCode", "HSCode"],
+        native_method="get_kzz_info",
+    )
+
+    assert items[0]["symbol"] == "123039.SZ"
+    assert items[0]["bondCode"] == "123039"
+    assert items[0]["underlyingSymbol"] == "300577"
+    assert items[0]["convertPrice"] == 29.15
+    assert fake_client.calls == [
+        (
+            "get_kzz_info",
+            {
+                "stock_code": "123039.SZ",
+                "field_list": ["KZZCode", "HSCode"],
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_tracking_etfs_calls_tdx_trackzs_method():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_trackzs_etf_info": {
+                "Value": [
+                    {"Code": "510300.SH", "Name": "沪深300ETF", "NowPrice": "4.21"}
+                ]
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_tracking_etfs("950162.CSI")
+
+    assert items[0]["indexSymbol"] == "950162.CSI"
+    assert items[0]["symbol"] == "510300.SH"
+    assert items[0]["price"] == 4.21
+    assert fake_client.calls == [
+        ("get_trackzs_etf_info", {"zs_code": "950162.CSI"})
+    ]
+
+
+@pytest.mark.asyncio
 async def test_call_formula_passes_exact_formula_method_with_args_and_context():
     fake_response = {"value": 10.2}
     fake_client = FakeTdxHttpClient({"formula_exp": fake_response})

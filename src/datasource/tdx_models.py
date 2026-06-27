@@ -123,6 +123,48 @@ class TdxSectorListQueryRequest(TdxModel):
     list_type: int = Field(default=0, alias="listType")
 
 
+class TdxSecurityRelationsQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    symbol: str
+
+
+class TdxIpoInfoQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    ipo_type: int = Field(default=0, alias="ipoType")
+    ipo_date: int = Field(default=0, alias="ipoDate")
+
+
+class TdxShareCapitalQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    symbol: str
+    date_list: list[str] = Field(default_factory=list, alias="dateList")
+    count: int = 1
+    start_date: str | None = Field(default=None, alias="startDate")
+    end_date: str | None = Field(default=None, alias="endDate")
+
+
+class TdxDividendFactorsQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    symbol: str
+    start_time: str | None = Field(default=None, alias="startTime")
+    end_time: str | None = Field(default=None, alias="endTime")
+
+
+class TdxConvertibleBondInfoQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    symbol: str
+    fields: list[str] | None = None
+    native_method: Literal["get_kzz_info", "get_cb_info"] = Field(
+        default="get_kzz_info",
+        alias="nativeMethod",
+    )
+
+
+class TdxTrackingEtfsQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    index_symbol: str = Field(alias="indexSymbol")
+
+
 class RawTdxCallRequest(TdxModel):
     method: str
     params: dict[str, Any] = Field(default_factory=dict)

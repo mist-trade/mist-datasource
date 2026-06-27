@@ -18,6 +18,13 @@ class FakeTdxProvider:
         self.security_info_queries: list[list[str]] = []
         self.trading_date_queries: list[tuple[str, str | None, str | None, int | None]] = []
         self.price_volume_queries: list[tuple[list[str], list[str] | None]] = []
+        self.relation_queries: list[str] = []
+        self.ipo_queries: list[tuple[int, int]] = []
+        self.share_capital_queries: list[tuple[str, list[str], int]] = []
+        self.share_capital_by_date_queries: list[tuple[str, str, str]] = []
+        self.dividend_factor_queries: list[tuple[str, str | None, str | None]] = []
+        self.convertible_bond_queries: list[tuple[str, list[str] | None, str]] = []
+        self.track_etf_queries: list[str] = []
         self.formula_calls: list[tuple[str, Any, Any]] = []
         self.fail_bars = False
 
@@ -134,6 +141,111 @@ class FakeTdxProvider:
             }
         ]
 
+    async def get_security_relations(self, symbol: str) -> list[dict[str, Any]]:
+        self.relation_queries.append(symbol)
+        return [
+            {
+                "symbol": symbol,
+                "category": "industry",
+                "code": "880081.SH",
+                "name": "通达信88",
+                "provider": "tdx",
+            }
+        ]
+
+    async def get_ipo_info(self, ipo_type: int, ipo_date: int) -> list[dict[str, Any]]:
+        self.ipo_queries.append((ipo_type, ipo_date))
+        return [
+            {
+                "code": "301036.SZ",
+                "name": "双乐转债",
+                "subscribeCode": "371036",
+                "subscribeDate": "20251226",
+                "issuePrice": 100.0,
+                "provider": "tdx",
+            }
+        ]
+
+    async def get_share_capital(
+        self,
+        symbol: str,
+        date_list: list[str],
+        count: int,
+    ) -> list[dict[str, Any]]:
+        self.share_capital_queries.append((symbol, date_list, count))
+        return [
+            {
+                "symbol": symbol,
+                "date": "20250101",
+                "totalShareCapital": 182942480.0,
+                "floatShareCapital": 182942480.0,
+                "provider": "tdx",
+            }
+        ]
+
+    async def get_share_capital_by_date(
+        self,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+    ) -> list[dict[str, Any]]:
+        self.share_capital_by_date_queries.append((symbol, start_date, end_date))
+        return [
+            {
+                "symbol": symbol,
+                "date": "20250101",
+                "totalShareCapital": 182942480.0,
+                "floatShareCapital": 182942480.0,
+                "provider": "tdx",
+            }
+        ]
+
+    async def get_dividend_factors(
+        self,
+        symbol: str,
+        start_time: str | None,
+        end_time: str | None,
+    ) -> list[dict[str, Any]]:
+        self.dividend_factor_queries.append((symbol, start_time, end_time))
+        return [
+            {
+                "symbol": symbol,
+                "date": "20250101",
+                "type": "1",
+                "bonus": 1.23,
+                "provider": "tdx",
+            }
+        ]
+
+    async def get_convertible_bond_info(
+        self,
+        symbol: str,
+        fields: list[str] | None = None,
+        native_method: str = "get_kzz_info",
+    ) -> list[dict[str, Any]]:
+        self.convertible_bond_queries.append((symbol, fields, native_method))
+        return [
+            {
+                "symbol": symbol,
+                "bondCode": "123039.SZ",
+                "underlyingSymbol": "300577.SZ",
+                "convertPrice": 29.15,
+                "provider": "tdx",
+            }
+        ]
+
+    async def get_tracking_etfs(self, index_symbol: str) -> list[dict[str, Any]]:
+        self.track_etf_queries.append(index_symbol)
+        return [
+            {
+                "indexSymbol": index_symbol,
+                "symbol": "510300.SH",
+                "name": "沪深300ETF",
+                "price": 4.21,
+                "provider": "tdx",
+            }
+        ]
+
     async def call_formula(
         self,
         name: str,
@@ -244,6 +356,12 @@ async def test_providers_returns_tdx_and_qmt_capability_manifests(
     assert tdx_families["security-info"] == "supported"
     assert tdx_families["sector-list"] == "supported"
     assert tdx_families["price-volume"] == "supported"
+    assert tdx_families["security-relations"] == "supported"
+    assert tdx_families["ipo-info"] == "supported"
+    assert tdx_families["share-capital"] == "supported"
+    assert tdx_families["dividend-factors"] == "supported"
+    assert tdx_families["convertible-bonds"] == "supported"
+    assert tdx_families["etf-info"] == "supported"
     assert tdx_families["formulas"] == "planned"
     assert qmt_families["bars"] in {"supported", "planned", "unsupported"}
     assert qmt_families["formulas"] == "unsupported"
@@ -281,6 +399,42 @@ async def test_providers_returns_tdx_and_qmt_capability_manifests(
             {"provider": "qmt", "symbols": ["600519.SH"]},
             "price-volume",
             "price-volume/query",
+        ),
+        (
+            "/v1/reference/relations/query",
+            {"provider": "qmt", "symbol": "600519.SH"},
+            "security-relations",
+            "reference/relations/query",
+        ),
+        (
+            "/v1/reference/ipo/query",
+            {"provider": "qmt", "ipoType": 2, "ipoDate": 1},
+            "ipo-info",
+            "reference/ipo/query",
+        ),
+        (
+            "/v1/reference/share-capital/query",
+            {"provider": "qmt", "symbol": "600519.SH", "dateList": ["20250101"]},
+            "share-capital",
+            "reference/share-capital/query",
+        ),
+        (
+            "/v1/reference/dividend-factors/query",
+            {"provider": "qmt", "symbol": "600519.SH"},
+            "dividend-factors",
+            "reference/dividend-factors/query",
+        ),
+        (
+            "/v1/instruments/convertible-bonds/query",
+            {"provider": "qmt", "symbol": "123039.SZ"},
+            "convertible-bonds",
+            "instruments/convertible-bonds/query",
+        ),
+        (
+            "/v1/instruments/tracking-etfs/query",
+            {"provider": "qmt", "indexSymbol": "950162.CSI"},
+            "etf-info",
+            "instruments/tracking-etfs/query",
         ),
     ],
 )
@@ -445,6 +599,136 @@ async def test_price_volume_query_returns_normalized_items(v1_client: AsyncClien
     assert tdx.main.tdx_provider.price_volume_queries == [
         (["600519.SH"], ["price", "volume"])
     ]
+
+
+@pytest.mark.asyncio
+async def test_reference_relations_query_returns_normalized_relations(
+    v1_client: AsyncClient,
+) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/reference/relations/query",
+        json={"symbol": "600519.SH"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["relations"][0]["category"] == "industry"
+    assert tdx.main.tdx_provider.relation_queries == ["600519.SH"]
+
+
+@pytest.mark.asyncio
+async def test_reference_ipo_query_returns_normalized_items(v1_client: AsyncClient) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/reference/ipo/query",
+        json={"ipoType": 2, "ipoDate": 1},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["items"][0]["subscribeCode"] == "371036"
+    assert tdx.main.tdx_provider.ipo_queries == [(2, 1)]
+
+
+@pytest.mark.asyncio
+async def test_reference_share_capital_query_uses_date_list(v1_client: AsyncClient) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/reference/share-capital/query",
+        json={"symbol": "600519.SH", "dateList": ["20250101"], "count": 1},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["items"][0]["totalShareCapital"] == 182942480.0
+    assert tdx.main.tdx_provider.share_capital_queries == [
+        ("600519.SH", ["20250101"], 1)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_reference_share_capital_query_uses_date_range(v1_client: AsyncClient) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/reference/share-capital/query",
+        json={"symbol": "600519.SH", "startDate": "20250101", "endDate": "20250601"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert tdx.main.tdx_provider.share_capital_by_date_queries == [
+        ("600519.SH", "20250101", "20250601")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_reference_dividend_factors_query_returns_normalized_items(
+    v1_client: AsyncClient,
+) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/reference/dividend-factors/query",
+        json={"symbol": "600519.SH", "startTime": "20250101", "endTime": "20251231"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["items"][0]["bonus"] == 1.23
+    assert tdx.main.tdx_provider.dividend_factor_queries == [
+        ("600519.SH", "20250101", "20251231")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_instruments_convertible_bonds_query_returns_normalized_items(
+    v1_client: AsyncClient,
+) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/instruments/convertible-bonds/query",
+        json={
+            "symbol": "123039.SZ",
+            "fields": ["KZZCode", "HSCode"],
+            "nativeMethod": "get_kzz_info",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["items"][0]["bondCode"] == "123039.SZ"
+    assert tdx.main.tdx_provider.convertible_bond_queries == [
+        ("123039.SZ", ["KZZCode", "HSCode"], "get_kzz_info")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_instruments_tracking_etfs_query_returns_normalized_items(
+    v1_client: AsyncClient,
+) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/instruments/tracking-etfs/query",
+        json={"indexSymbol": "950162.CSI"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["items"][0]["indexSymbol"] == "950162.CSI"
+    assert tdx.main.tdx_provider.track_etf_queries == ["950162.CSI"]
 
 
 @pytest.mark.asyncio

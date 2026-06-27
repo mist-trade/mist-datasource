@@ -136,6 +136,101 @@ class TdxDatasourceProvider:
             securities.append(_normalize_security_info(tdx_symbol, stock_info, more_info))
         return securities
 
+    async def get_security_relations(self, symbol: str) -> list[dict[str, Any]]:
+        tdx_symbol = to_tdx_http_code(symbol)
+        native = await self.client.call("get_relation", {"stock_code": tdx_symbol})
+        return _normalize_relation_items(tdx_symbol, native)
+
+    async def get_ipo_info(self, ipo_type: int = 0, ipo_date: int = 0) -> list[dict[str, Any]]:
+        native = await self.client.call(
+            "get_ipo_info",
+            {
+                "ipo_type": ipo_type,
+                "ipo_date": ipo_date,
+            },
+        )
+        return [_normalize_ipo_item(item) for item in _native_items(native, "IPOStocks")]
+
+    async def get_share_capital(
+        self,
+        symbol: str,
+        date_list: list[str],
+        count: int,
+    ) -> list[dict[str, Any]]:
+        tdx_symbol = to_tdx_http_code(symbol)
+        native = await self.client.call(
+            "get_gb_info",
+            {
+                "stock_code": tdx_symbol,
+                "date_list": date_list,
+                "count": count,
+            },
+        )
+        return [_normalize_share_capital_item(tdx_symbol, item) for item in _native_items(native)]
+
+    async def get_share_capital_by_date(
+        self,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+    ) -> list[dict[str, Any]]:
+        tdx_symbol = to_tdx_http_code(symbol)
+        native = await self.client.call(
+            "get_gb_info_by_date",
+            {
+                "stock_code": tdx_symbol,
+                "start_date": start_date,
+                "end_date": end_date,
+            },
+        )
+        return [_normalize_share_capital_item(tdx_symbol, item) for item in _native_items(native)]
+
+    async def get_dividend_factors(
+        self,
+        symbol: str,
+        start_time: str | None = None,
+        end_time: str | None = None,
+    ) -> list[dict[str, Any]]:
+        tdx_symbol = to_tdx_http_code(symbol)
+        native = await self.client.call(
+            "get_divid_factors",
+            {
+                "stock_code": tdx_symbol,
+                "start_time": start_time or "",
+                "end_time": end_time or "",
+            },
+        )
+        return [
+            _normalize_dividend_factor_item(tdx_symbol, item)
+            for item in _native_items(native, "Factors")
+        ]
+
+    async def get_convertible_bond_info(
+        self,
+        symbol: str,
+        fields: list[str] | None = None,
+        native_method: str = "get_kzz_info",
+    ) -> list[dict[str, Any]]:
+        tdx_symbol = to_tdx_http_code(symbol)
+        native = await self.client.call(
+            native_method,
+            {
+                "stock_code": tdx_symbol,
+                "field_list": fields or [],
+            },
+        )
+        return [
+            _normalize_convertible_bond_item(tdx_symbol, item)
+            for item in _native_items(native)
+        ]
+
+    async def get_tracking_etfs(self, index_symbol: str) -> list[dict[str, Any]]:
+        native = await self.client.call("get_trackzs_etf_info", {"zs_code": index_symbol})
+        return [
+            _normalize_tracking_etf_item(index_symbol, item)
+            for item in _native_items(native, "ETFs")
+        ]
+
     async def raw_call(self, method: str, params: dict[str, Any] | list[Any] | None = None) -> Any:
         return await self.client.call(method, params)
 
@@ -295,6 +390,175 @@ def _normalize_price_volume_item(symbol: str, native: Any) -> dict[str, Any]:
     }
 
 
+def _normalize_relation_items(symbol: str, native: Any) -> list[dict[str, Any]]:
+    values = _unwrap_tdx_value(native)
+    relations: list[dict[str, Any]] = []
+
+    if isinstance(values, dict):
+        sector_values = _first_native_value(values, "RelatedSectors", "sectors", "sector_list")
+        stock_values = _first_native_value(values, "RelatedStocks", "stocks", "stock_list")
+        if sector_values is not None or stock_values is not None:
+            relations.extend(
+                _normalize_relation_group(symbol, "sector", _as_sequence(sector_values))
+            )
+            relations.extend(_normalize_relation_group(symbol, "stock", _as_sequence(stock_values)))
+            return relations
+        return [_normalize_relation_item(symbol, values, "unknown")]
+
+    return _normalize_relation_group(symbol, "unknown", _as_sequence(values))
+
+
+def _normalize_relation_group(
+    symbol: str,
+    category: str,
+    values: list[Any],
+) -> list[dict[str, Any]]:
+    return [_normalize_relation_item(symbol, item, category) for item in values]
+
+
+def _normalize_relation_item(
+    symbol: str,
+    item: Any,
+    default_category: str,
+) -> dict[str, Any]:
+    normalized_symbol = normalize_symbol(symbol)
+    if isinstance(item, dict):
+        code = _first_native_value(item, "code", "Code", "block_code", "stock_code")
+        name = _first_native_value(item, "name", "Name", "block_name")
+        category = _first_native_value(item, "category", "Type", "type")
+        return {
+            "symbol": normalized_symbol,
+            "category": str(category) if category is not None else default_category,
+            "code": str(code) if code is not None else "",
+            "name": str(name) if name is not None else None,
+            "provider": "tdx",
+            "raw": item,
+        }
+    return {
+        "symbol": normalized_symbol,
+        "category": default_category,
+        "code": normalize_symbol(str(item)) if default_category == "stock" else str(item),
+        "name": None,
+        "provider": "tdx",
+        "raw": item,
+    }
+
+
+def _normalize_ipo_item(item: Any) -> dict[str, Any]:
+    native = item if isinstance(item, dict) else {"value": item}
+    code = _first_native_value(native, "code", "Code")
+    name = _first_native_value(native, "name", "Name")
+    subscribe_code = _first_native_value(native, "SGCode", "subscribeCode")
+    subscribe_date = _first_native_value(native, "SGDate", "subscribeDate")
+    issue_price = _first_native_value(native, "SGPrice", "issuePrice")
+    return {
+        "code": str(code) if code is not None else "",
+        "name": str(name) if name is not None else None,
+        "subscribeCode": str(subscribe_code) if subscribe_code is not None else None,
+        "subscribeDate": str(subscribe_date) if subscribe_date is not None else None,
+        "issuePrice": _optional_float(issue_price),
+        "provider": "tdx",
+        "raw": item,
+    }
+
+
+def _normalize_share_capital_item(symbol: str, item: Any) -> dict[str, Any]:
+    native = item if isinstance(item, dict) else {"value": item}
+    date = _first_native_value(native, "Date", "date")
+    total_share_capital = _first_native_value(native, "Zgb", "TotalShare", "totalShareCapital")
+    float_share_capital = _first_native_value(native, "Ltgb", "FlowShare", "floatShareCapital")
+    return {
+        "symbol": normalize_symbol(symbol),
+        "date": str(date) if date is not None else None,
+        "totalShareCapital": _optional_float(total_share_capital),
+        "floatShareCapital": _optional_float(float_share_capital),
+        "provider": "tdx",
+        "raw": item,
+    }
+
+
+def _normalize_dividend_factor_item(symbol: str, item: Any) -> dict[str, Any]:
+    native = item if isinstance(item, dict) else {"value": item}
+    date = _first_native_value(native, "Date", "date")
+    factor_type = _first_native_value(native, "Type", "type")
+    bonus = _first_native_value(native, "Bonus", "bonus")
+    allot_price = _first_native_value(native, "AlloPrice", "AllotPrice", "allotPrice")
+    share_bonus = _first_native_value(native, "ShareBonus", "shareBonus")
+    allotment = _first_native_value(native, "Allotment", "allotment")
+    return {
+        "symbol": normalize_symbol(symbol),
+        "date": str(date) if date is not None else None,
+        "type": str(factor_type) if factor_type is not None else None,
+        "bonus": _optional_float(bonus),
+        "allotPrice": _optional_float(allot_price),
+        "shareBonus": _optional_float(share_bonus),
+        "allotment": _optional_float(allotment),
+        "provider": "tdx",
+        "raw": item,
+    }
+
+
+def _normalize_convertible_bond_item(symbol: str, item: Any) -> dict[str, Any]:
+    native = item if isinstance(item, dict) else {"value": item}
+    bond_code = _first_native_value(native, "KZZCode", "Code", "code", "stock_code")
+    underlying_symbol = _first_native_value(native, "HSCode", "underlyingSymbol")
+    convert_price = _first_native_value(native, "ZGPrice", "convertPrice")
+    bond_price = _first_native_value(native, "KZZPrice", "bondPrice")
+    underlying_price = _first_native_value(native, "AGPrice", "underlyingPrice")
+    premium_rate = _first_native_value(native, "KZZYj", "premiumRate")
+    convert_value = _first_native_value(native, "ZGValue", "convertValue")
+    remaining_size = _first_native_value(native, "RestScope", "remainingSize")
+    return {
+        "symbol": normalize_symbol(symbol),
+        "bondCode": str(bond_code) if bond_code is not None else None,
+        "underlyingSymbol": str(underlying_symbol) if underlying_symbol is not None else None,
+        "convertPrice": _optional_float(convert_price),
+        "bondPrice": _optional_float(bond_price),
+        "underlyingPrice": _optional_float(underlying_price),
+        "premiumRate": _optional_float(premium_rate),
+        "convertValue": _optional_float(convert_value),
+        "remainingSize": _optional_float(remaining_size),
+        "provider": "tdx",
+        "raw": item,
+    }
+
+
+def _normalize_tracking_etf_item(index_symbol: str, item: Any) -> dict[str, Any]:
+    native = item if isinstance(item, dict) else {"value": item}
+    code = _first_native_value(native, "Code", "code")
+    name = _first_native_value(native, "Name", "name")
+    price = _first_native_value(native, "NowPrice", "price")
+    pre_close = _first_native_value(native, "PreClose", "preClose")
+    iopv = _first_native_value(native, "IOPV", "iopv")
+    fund_size = _first_native_value(native, "Sz", "size")
+    return {
+        "indexSymbol": index_symbol,
+        "symbol": normalize_symbol(str(code)) if code is not None else "",
+        "name": str(name) if name is not None else None,
+        "price": _optional_float(price),
+        "preClose": _optional_float(pre_close),
+        "iopv": _optional_float(iopv),
+        "size": _optional_float(fund_size),
+        "provider": "tdx",
+        "raw": item,
+    }
+
+
+def _native_items(native: Any, *preferred_list_fields: str) -> list[Any]:
+    values = _unwrap_tdx_value(native)
+    if isinstance(values, list | tuple):
+        return list(values)
+    if isinstance(values, dict):
+        for field_name in preferred_list_fields:
+            field_value = _first_native_value(values, field_name)
+            if isinstance(field_value, list | tuple):
+                return list(field_value)
+        return [values]
+    if values is None:
+        return []
+    return [values]
+
+
 def _native_item_for_symbol(native: Any, symbol: str) -> Any:
     values = _unwrap_tdx_value(native)
     candidates = {symbol, to_tdx_http_code(symbol), normalize_symbol(symbol), to_tdx_code(symbol)}
@@ -310,6 +574,14 @@ def _native_item_for_symbol(native: Any, symbol: str) -> Any:
                 if item_symbol and normalize_symbol(str(item_symbol)) == normalize_symbol(symbol):
                     return item
     return values
+
+
+def _as_sequence(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list | tuple):
+        return list(value)
+    return [value]
 
 
 def _first_native_value(native: dict[str, Any], *field_names: str) -> Any:
