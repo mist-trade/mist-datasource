@@ -35,6 +35,14 @@ class FakeTdxProvider:
         self.market_trade_aggregate_queries: list[tuple[list[str], str, str]] = []
         self.market_trade_aggregate_by_date_queries: list[tuple[list[str], int, int]] = []
         self.report_data_queries: list[str] = []
+        self.formula_format_queries: list[dict[str, Any]] = []
+        self.formula_set_data_queries: list[dict[str, Any]] = []
+        self.formula_set_data_info_queries: list[dict[str, Any]] = []
+        self.formula_get_data_calls = 0
+        self.formula_get_all_queries: list[int] = []
+        self.formula_get_info_queries: list[tuple[int, str]] = []
+        self.formula_execution_queries: list[tuple[str, str, str, int | None, int]] = []
+        self.formula_batch_execution_queries: list[tuple[str, str, list[str], int]] = []
         self.formula_calls: list[tuple[str, Any, Any]] = []
         self.fail_bars = False
 
@@ -431,6 +439,81 @@ class FakeTdxProvider:
             }
         ]
 
+    async def format_formula_data(
+        self,
+        data: dict[str, Any],
+        timeout_ms: int = 10000,
+    ) -> list[dict[str, Any]]:
+        _ = timeout_ms
+        self.formula_format_queries.append(data)
+        return [{"symbol": "688318.SH", "rows": [{"Close": 144.4}], "provider": "tdx"}]
+
+    async def set_formula_data(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.formula_set_data_queries.append(payload)
+        return {"message": "set ok", "runId": "1", "provider": "tdx"}
+
+    async def set_formula_data_info(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.formula_set_data_info_queries.append(payload)
+        return {"message": "set info ok", "runId": "2", "provider": "tdx"}
+
+    async def get_formula_data(self, timeout_ms: int = 10000) -> dict[str, Any]:
+        _ = timeout_ms
+        self.formula_get_data_calls += 1
+        return {"symbol": "688318.SH", "rows": [{"Close": 144.4}], "provider": "tdx"}
+
+    async def get_formula_list(
+        self,
+        formula_type: int,
+        timeout_ms: int = 10000,
+    ) -> list[dict[str, Any]]:
+        _ = timeout_ms
+        self.formula_get_all_queries.append(formula_type)
+        return [{"code": "MA", "name": "均线", "type": formula_type, "isSystem": True}]
+
+    async def get_formula_info(
+        self,
+        formula_type: int,
+        formula_code: str,
+        timeout_ms: int = 10000,
+    ) -> dict[str, Any]:
+        _ = timeout_ms
+        self.formula_get_info_queries.append((formula_type, formula_code))
+        return {
+            "code": formula_code,
+            "name": "平滑异同平均线",
+            "type": formula_type,
+            "params": [{"name": "SHORT", "min": 2.0, "max": 200.0, "default": 12.0}],
+            "lines": [{"name": "DIF"}],
+            "provider": "tdx",
+        }
+
+    async def execute_formula(
+        self,
+        kind: str,
+        formula_name: str,
+        formula_arg: str,
+        xsflag: int | None,
+        timeout_ms: int,
+    ) -> dict[str, Any]:
+        self.formula_execution_queries.append((kind, formula_name, formula_arg, xsflag, timeout_ms))
+        return {
+            "kind": kind,
+            "formulaName": formula_name,
+            "values": {"DIF": [0.0, 0.1]},
+            "provider": "tdx",
+        }
+
+    async def execute_formula_batch(self, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self.formula_batch_execution_queries.append(
+            (kind, payload["formulaName"], payload["stockList"], payload["returnCount"])
+        )
+        return {
+            "kind": kind,
+            "formulaName": payload["formulaName"],
+            "items": [{"symbol": payload["stockList"][0], "values": {"DIF": [0.1]}}],
+            "provider": "tdx",
+        }
+
     async def call_formula(
         self,
         name: str,
@@ -553,10 +636,16 @@ async def test_providers_returns_tdx_and_qmt_capability_manifests(
     assert tdx_families["sector-trade-aggregate"] == "supported"
     assert tdx_families["market-trade-aggregate"] == "supported"
     assert tdx_families["report-data"] == "supported"
-    assert tdx_families["formulas"] == "planned"
+    assert tdx_families["formula-data"] == "supported"
+    assert tdx_families["formula-metadata"] == "supported"
+    assert tdx_families["formula-execution"] == "supported"
+    assert tdx_families["formula-batch-execution"] == "supported"
+    assert tdx_families["formulas"] == "supported"
     assert qmt_families["bars"] in {"supported", "planned", "unsupported"}
     assert qmt_families["financial-data"] == "unsupported"
     assert qmt_families["report-data"] == "unsupported"
+    assert qmt_families["formula-data"] == "unsupported"
+    assert qmt_families["formula-execution"] == "unsupported"
     assert qmt_families["formulas"] == "unsupported"
 
 
@@ -688,6 +777,78 @@ async def test_providers_returns_tdx_and_qmt_capability_manifests(
             {"provider": "qmt", "symbol": "600519.SH"},
             "report-data",
             "reports/data/query",
+        ),
+        (
+            "/v1/formulas/data/format/query",
+            {"provider": "qmt", "data": {"688318.SH": []}},
+            "formula-data",
+            "formulas/data/format/query",
+        ),
+        (
+            "/v1/formulas/data/set",
+            {"provider": "qmt", "stockCode": "688318.SH", "stockData": [{"Close": 1}]},
+            "formula-data",
+            "formulas/data/set",
+        ),
+        (
+            "/v1/formulas/data/set-info",
+            {"provider": "qmt", "stockCode": "688318.SH", "count": 5},
+            "formula-data",
+            "formulas/data/set-info",
+        ),
+        (
+            "/v1/formulas/data/query",
+            {"provider": "qmt"},
+            "formula-data",
+            "formulas/data/query",
+        ),
+        (
+            "/v1/formulas/metadata/query",
+            {"provider": "qmt", "formulaType": 0},
+            "formula-metadata",
+            "formulas/metadata/query",
+        ),
+        (
+            "/v1/formulas/metadata/info/query",
+            {"provider": "qmt", "formulaType": 0, "formulaCode": "MACD"},
+            "formula-metadata",
+            "formulas/metadata/info/query",
+        ),
+        (
+            "/v1/formulas/zb/execute",
+            {"provider": "qmt", "formulaName": "MACD", "formulaArg": "12,26,9"},
+            "formula-execution",
+            "formulas/zb/execute",
+        ),
+        (
+            "/v1/formulas/xg/execute",
+            {"provider": "qmt", "formulaName": "UPN", "formulaArg": "3"},
+            "formula-execution",
+            "formulas/xg/execute",
+        ),
+        (
+            "/v1/formulas/exp/execute",
+            {"provider": "qmt", "formulaName": "CCI", "formulaArg": "12"},
+            "formula-execution",
+            "formulas/exp/execute",
+        ),
+        (
+            "/v1/formulas/batch/xg/execute",
+            {"provider": "qmt", "formulaName": "UPN", "stockList": ["688318.SH"]},
+            "formula-batch-execution",
+            "formulas/batch/xg/execute",
+        ),
+        (
+            "/v1/formulas/batch/zb/execute",
+            {"provider": "qmt", "formulaName": "CYX", "stockList": ["688318.SH"]},
+            "formula-batch-execution",
+            "formulas/batch/zb/execute",
+        ),
+        (
+            "/v1/formulas/batch/exp/execute",
+            {"provider": "qmt", "formulaName": "CCI", "stockList": ["688318.SH"]},
+            "formula-batch-execution",
+            "formulas/batch/exp/execute",
         ),
     ],
 )
@@ -1187,6 +1348,209 @@ async def test_report_data_query_returns_normalized_items(v1_client: AsyncClient
     assert body["ok"] is True
     assert body["data"]["items"][0]["symbol"] == "600519.SH"
     assert tdx.main.tdx_provider.report_data_queries == ["600519.SH"]
+
+
+@pytest.mark.asyncio
+async def test_formula_format_data_query_returns_normalized_items(
+    v1_client: AsyncClient,
+) -> None:
+    import tdx.main
+
+    payload = {"data": {"688318.SH": [{"Close": 144.4}]}}
+    response = await v1_client.post("/v1/formulas/data/format/query", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["items"][0]["symbol"] == "688318.SH"
+    assert tdx.main.tdx_provider.formula_format_queries == [payload["data"]]
+
+
+@pytest.mark.asyncio
+async def test_formula_set_data_returns_result(v1_client: AsyncClient) -> None:
+    import tdx.main
+
+    payload = {
+        "stockCode": "688318.SH",
+        "stockPeriod": "1d",
+        "stockData": [{"Close": 144.4}],
+        "count": 1,
+        "dividendType": 1,
+    }
+    response = await v1_client.post("/v1/formulas/data/set", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["result"]["runId"] == "1"
+    assert tdx.main.tdx_provider.formula_set_data_queries == [
+        {
+            "stockCode": "688318.SH",
+            "stockPeriod": "1d",
+            "stockData": [{"Close": 144.4}],
+            "count": 1,
+            "dividendType": 1,
+            "timeoutMs": 10000,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_formula_set_data_info_returns_result(v1_client: AsyncClient) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/formulas/data/set-info",
+        json={"stockCode": "688318.SH", "stockPeriod": "1d", "count": 5},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["result"]["runId"] == "2"
+    assert tdx.main.tdx_provider.formula_set_data_info_queries[0]["stockCode"] == "688318.SH"
+
+
+@pytest.mark.asyncio
+async def test_formula_get_data_returns_item(v1_client: AsyncClient) -> None:
+    import tdx.main
+
+    response = await v1_client.post("/v1/formulas/data/query", json={})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["item"]["symbol"] == "688318.SH"
+    assert tdx.main.tdx_provider.formula_get_data_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_formula_metadata_query_returns_items(v1_client: AsyncClient) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/formulas/metadata/query",
+        json={"formulaType": 0},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["items"][0]["code"] == "MA"
+    assert tdx.main.tdx_provider.formula_get_all_queries == [0]
+
+
+@pytest.mark.asyncio
+async def test_formula_metadata_info_query_returns_item(v1_client: AsyncClient) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        "/v1/formulas/metadata/info/query",
+        json={"formulaType": 0, "formulaCode": "MACD"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["item"]["params"][0]["name"] == "SHORT"
+    assert tdx.main.tdx_provider.formula_get_info_queries == [(0, "MACD")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("path", "kind", "xsflag"),
+    [
+        ("/v1/formulas/zb/execute", "zb", 8),
+        ("/v1/formulas/xg/execute", "xg", None),
+        ("/v1/formulas/exp/execute", "exp", None),
+    ],
+)
+async def test_formula_execution_returns_result(
+    v1_client: AsyncClient,
+    path: str,
+    kind: str,
+    xsflag: int | None,
+) -> None:
+    import tdx.main
+
+    payload: dict[str, Any] = {
+        "formulaName": "MACD",
+        "formulaArg": "12,26,9",
+        "timeoutMs": 5000,
+    }
+    if xsflag is not None:
+        payload["xsflag"] = xsflag
+
+    response = await v1_client.post(path, json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["result"]["kind"] == kind
+    assert tdx.main.tdx_provider.formula_execution_queries[-1] == (
+        kind,
+        "MACD",
+        "12,26,9",
+        xsflag,
+        5000,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("path", "kind"),
+    [
+        ("/v1/formulas/batch/xg/execute", "xg"),
+        ("/v1/formulas/batch/zb/execute", "zb"),
+        ("/v1/formulas/batch/exp/execute", "exp"),
+    ],
+)
+async def test_formula_batch_execution_returns_result(
+    v1_client: AsyncClient,
+    path: str,
+    kind: str,
+) -> None:
+    import tdx.main
+
+    response = await v1_client.post(
+        path,
+        json={
+            "formulaName": "UPN",
+            "formulaArg": "3",
+            "stockList": ["688318.SH"],
+            "returnCount": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["data"]["result"]["kind"] == kind
+    assert tdx.main.tdx_provider.formula_batch_execution_queries[-1] == (
+        kind,
+        "UPN",
+        ["688318.SH"],
+        1,
+    )
+
+
+@pytest.mark.asyncio
+async def test_formula_batch_execution_rejects_oversized_stock_list(
+    v1_client: AsyncClient,
+) -> None:
+    response = await v1_client.post(
+        "/v1/formulas/batch/xg/execute",
+        json={
+            "formulaName": "UPN",
+            "stockList": [f"{index:06d}.SH" for index in range(201)],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+    assert body["error"]["code"] == "FORMULA_REQUEST_LIMIT_EXCEEDED"
+    assert body["error"]["details"]["limit"] == "stockList"
 
 
 @pytest.mark.asyncio

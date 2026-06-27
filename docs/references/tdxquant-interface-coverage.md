@@ -79,18 +79,18 @@ Related references:
 
 | TDX method | Source | Classification | Endpoint family | QMT alignment | Test strategy |
 | --- | --- | --- | --- | --- | --- |
-| `formula_format_data` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h3hrvkp4sc0g/mindoc-1h3hte6obagc0.html> | `normalized-phase-4` | `formula-data` | QMT formula equivalent unknown. | Fixture and input-size validation. |
-| `formula_set_data` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h3hrvkp4sc0g/mindoc-1h3hsvcct5sdc.html> | `normalized-phase-4` | `formula-data` | QMT formula equivalent unknown. | Fixture and timeout/error mapping. |
-| `formula_set_data_info` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h3hrvkp4sc0g/mindoc-1h3hs08rn02uc.html> | `normalized-phase-4` | `formula-data` | QMT formula equivalent unknown. | Fixture and timeout/error mapping. |
-| `formula_get_data` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h3hrvkp4sc0g/mindoc-1h3httgemshno.html> | `normalized-phase-4` | `formula-data` | QMT formula equivalent unknown. | Fixture and normalized value model. |
-| `formula_get_all` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h3hrvkp4sc0g/mindoc-1hce2u769tljc.html> | `normalized-phase-4` | `formula-metadata` | QMT formula equivalent unknown. | Fixture and formula list model. |
-| `formula_get_info` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h3hrvkp4sc0g/mindoc-1hce356csmgmo.html> | `normalized-phase-4` | `formula-metadata` | QMT formula equivalent unknown. | Fixture and formula info model. |
-| `formula_zb` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h3hrvkp4sc0g/mindoc-1h3huq37005ro.html> | `normalized-phase-4` | `formula-execution` | QMT formula equivalent unknown. | Timeout, request limit, fixture, error mapping. |
-| `formula_xg` | Formula execution page/content. | `normalized-phase-4` | `formula-execution` | QMT formula equivalent unknown. | Timeout, request limit, fixture, error mapping. |
-| `formula_exp` | Formula execution page/content. | `normalized-phase-4` | `formula-execution` | QMT formula equivalent unknown. | Timeout, request limit, fixture, error mapping. |
-| `formula_process_mul_zb` | Batch formula page/content. | `normalized-phase-4` | `formula-batch-execution` | QMT formula equivalent unknown. | Timeout, batch-size limit, fixture, error mapping. |
-| `formula_process_mul_xg` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h3hrvkp4sc0g/mindoc-1h4ad5lisvdfg.html> | `normalized-phase-4` | `formula-batch-execution` | QMT formula equivalent unknown. | Timeout, batch-size limit, fixture, error mapping. |
-| `formula_process_mul_exp` | Batch formula page/content. | `normalized-phase-4` | `formula-batch-execution` | QMT formula equivalent unknown. | Timeout, batch-size limit, fixture, error mapping. |
+| `formula_format_data` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h3hrvkp4sc0g/mindoc-1h3hte6obagc0.html> | `normalized-now` | `formula-data` via `/v1/formulas/data/format/query` | QMT returns unsupported until mapping is verified. | Fixture and input-size validation. |
+| `formula_set_data` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h3hrvkp4sc0g/mindoc-1h3hsvcct5sdc.html> | `normalized-now` | `formula-data` via `/v1/formulas/data/set` | QMT returns unsupported until mapping is verified. | Fixture and timeout/error mapping. |
+| `formula_set_data_info` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h3hrvkp4sc0g/mindoc-1h3hs08rn02uc.html> | `normalized-now` | `formula-data` via `/v1/formulas/data/set-info` | QMT returns unsupported until mapping is verified. | Fixture and timeout/error mapping. |
+| `formula_get_data` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h3hrvkp4sc0g/mindoc-1h3httgemshno.html> | `normalized-now` | `formula-data` via `/v1/formulas/data/query` | QMT returns unsupported until mapping is verified. | Fixture and normalized value model. |
+| `formula_get_all` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h3hrvkp4sc0g/mindoc-1hce2u769tljc.html> | `normalized-now` | `formula-metadata` via `/v1/formulas/metadata/query` | QMT returns unsupported until mapping is verified. | Fixture, formula list model, optional runtime smoke. |
+| `formula_get_info` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h3hrvkp4sc0g/mindoc-1hce356csmgmo.html> | `normalized-now` | `formula-metadata` via `/v1/formulas/metadata/info/query` | QMT returns unsupported until mapping is verified. | Fixture and formula info model. |
+| `formula_zb` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h3hrvkp4sc0g/mindoc-1h3huq37005ro.html> | `normalized-now` | `formula-execution` via `/v1/formulas/zb/execute` | QMT returns unsupported until mapping is verified. | Timeout, request limit, fixture, error mapping. |
+| `formula_xg` | Formula execution page/content. | `normalized-now` | `formula-execution` via `/v1/formulas/xg/execute` | QMT returns unsupported until mapping is verified. | Timeout, request limit, fixture, error mapping. |
+| `formula_exp` | Formula execution page/content. | `normalized-now` | `formula-execution` via `/v1/formulas/exp/execute` | QMT returns unsupported until mapping is verified. | Timeout, request limit, fixture, error mapping. |
+| `formula_process_mul_zb` | Batch formula page/content. | `normalized-now` | `formula-batch-execution` via `/v1/formulas/batch/zb/execute` | QMT returns unsupported until mapping is verified. | Timeout, batch-size limit, fixture, error mapping. |
+| `formula_process_mul_xg` | <https://help.tdx.com.cn/quant/docs/markdown/mindoc-1h3hrvkp4sc0g/mindoc-1h4ad5lisvdfg.html> | `normalized-now` | `formula-batch-execution` via `/v1/formulas/batch/xg/execute` | QMT returns unsupported until mapping is verified. | Timeout, batch-size limit, fixture, error mapping. |
+| `formula_process_mul_exp` | Batch formula page/content. | `normalized-now` | `formula-batch-execution` via `/v1/formulas/batch/exp/execute` | QMT returns unsupported until mapping is verified. | Timeout, batch-size limit, fixture, error mapping. |
 
 ## Runtime/Internal
 

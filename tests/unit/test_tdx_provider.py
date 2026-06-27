@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any
 
 import pytest
@@ -22,6 +23,13 @@ class FakeTdxHttpClient:
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+class SlowTdxHttpClient(FakeTdxHttpClient):
+    async def call(self, method: str, params: dict[str, Any] | list[Any] | None = None) -> Any:
+        self.calls.append((method, params))
+        await asyncio.sleep(0.05)
+        return {}
 
 
 def native_bar_rows() -> dict[str, Any]:
@@ -824,6 +832,268 @@ async def test_get_report_data_calls_tdx_method_and_normalizes_items():
             },
         )
     ]
+
+
+@pytest.mark.asyncio
+async def test_format_formula_data_calls_tdx_formula_format_data():
+    fake_client = FakeTdxHttpClient(
+        {
+            "formula_format_data": {
+                "Value": {
+                    "688318.SH": [{"Close": "144.4"}],
+                }
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.format_formula_data({"688318.SH": [{"Close": 144.4}]})
+
+    assert items == [
+        {
+            "symbol": "688318.SH",
+            "rows": [{"Close": "144.4"}],
+            "provider": "tdx",
+            "raw": [{"Close": "144.4"}],
+        }
+    ]
+    assert fake_client.calls == [
+        (
+            "formula_format_data",
+            {
+                "data_dict": {"688318.SH": [{"Close": 144.4}]},
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_set_formula_data_calls_tdx_formula_set_data():
+    fake_client = FakeTdxHttpClient({"formula_set_data": {"Value": {"Result": "OK"}}})
+    provider = TdxDatasourceProvider(fake_client)
+
+    result = await provider.set_formula_data(
+        {
+            "stockCode": "688318.SH",
+            "stockPeriod": "1d",
+            "stockData": [{"Close": 144.4}],
+            "count": 1,
+            "dividendType": 1,
+            "timeoutMs": 10000,
+        }
+    )
+
+    assert result["message"] == "OK"
+    assert result["provider"] == "tdx"
+    assert fake_client.calls == [
+        (
+            "formula_set_data",
+            {
+                "stock_code": "688318.SH",
+                "stock_period": "1d",
+                "stock_data": [{"Close": 144.4}],
+                "count": 1,
+                "dividend_type": 1,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_set_formula_data_info_calls_tdx_formula_set_data_info():
+    fake_client = FakeTdxHttpClient({"formula_set_data_info": {"Value": True}})
+    provider = TdxDatasourceProvider(fake_client)
+
+    result = await provider.set_formula_data_info(
+        {
+            "stockCode": "688318.SH",
+            "stockPeriod": "1d",
+            "startTime": "20250101",
+            "endTime": "20250102",
+            "count": 2,
+            "dividendType": 0,
+            "timeoutMs": 10000,
+        }
+    )
+
+    assert result["ok"] is True
+    assert fake_client.calls == [
+        (
+            "formula_set_data_info",
+            {
+                "stock_code": "688318.SH",
+                "stock_period": "1d",
+                "start_time": "20250101",
+                "end_time": "20250102",
+                "count": 2,
+                "dividend_type": 0,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_formula_data_calls_tdx_formula_get_data():
+    fake_client = FakeTdxHttpClient(
+        {"formula_get_data": {"Value": {"688318.SH": [{"Close": "144.4"}]}}}
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    item = await provider.get_formula_data()
+
+    assert item["symbol"] == "688318.SH"
+    assert item["rows"] == [{"Close": "144.4"}]
+    assert fake_client.calls == [("formula_get_data", {})]
+
+
+@pytest.mark.asyncio
+async def test_get_formula_list_calls_tdx_formula_get_all():
+    fake_client = FakeTdxHttpClient(
+        {
+            "formula_get_all": {
+                "Value": [
+                    {"FormulaCode": "MACD", "FormulaName": "平滑异同平均线", "Type": 0}
+                ]
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    items = await provider.get_formula_list(0)
+
+    assert items[0]["code"] == "MACD"
+    assert items[0]["name"] == "平滑异同平均线"
+    assert fake_client.calls == [("formula_get_all", {"formula_type": 0})]
+
+
+@pytest.mark.asyncio
+async def test_get_formula_info_calls_tdx_formula_get_info():
+    fake_client = FakeTdxHttpClient(
+        {
+            "formula_get_info": {
+                "Value": {
+                    "FormulaCode": "MACD",
+                    "FormulaName": "平滑异同平均线",
+                    "Params": [{"Name": "SHORT", "Default": 12}],
+                    "Lines": [{"Name": "DIF"}],
+                }
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    item = await provider.get_formula_info(0, "MACD")
+
+    assert item["code"] == "MACD"
+    assert item["params"][0]["Name"] == "SHORT"
+    assert fake_client.calls == [
+        ("formula_get_info", {"formula_type": 0, "formula_code": "MACD"})
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kind", "expected_method", "expected_params"),
+    [
+        (
+            "zb",
+            "formula_zb",
+            {"formula_name": "MACD", "formula_arg": "12,26,9", "xsflag": 8},
+        ),
+        (
+            "xg",
+            "formula_xg",
+            {"formula_name": "UPN", "formula_arg": "3"},
+        ),
+        (
+            "exp",
+            "formula_exp",
+            {"formula_name": "CCI", "formula_arg": "12"},
+        ),
+    ],
+)
+async def test_execute_formula_calls_selected_tdx_method(
+    kind: str,
+    expected_method: str,
+    expected_params: dict[str, Any],
+):
+    fake_client = FakeTdxHttpClient({expected_method: {"Value": {"DIF": ["0.1"]}}})
+    provider = TdxDatasourceProvider(fake_client)
+
+    result = await provider.execute_formula(
+        kind,
+        expected_params["formula_name"],
+        expected_params["formula_arg"],
+        expected_params.get("xsflag"),
+        timeout_ms=10000,
+    )
+
+    assert result["kind"] == kind
+    assert result["raw"] == {"DIF": ["0.1"]}
+    assert fake_client.calls == [(expected_method, expected_params)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kind", "expected_method"),
+    [
+        ("xg", "formula_process_mul_xg"),
+        ("zb", "formula_process_mul_zb"),
+        ("exp", "formula_process_mul_exp"),
+    ],
+)
+async def test_execute_formula_batch_calls_selected_tdx_method(kind: str, expected_method: str):
+    fake_client = FakeTdxHttpClient({expected_method: {"Value": [{"Code": "688318.SH"}]}})
+    provider = TdxDatasourceProvider(fake_client)
+
+    result = await provider.execute_formula_batch(
+        kind,
+        {
+            "formulaName": "UPN",
+            "formulaArg": "3",
+            "returnCount": 1,
+            "returnDate": False,
+            "stockList": ["688318.SH"],
+            "stockPeriod": "1d",
+            "startTime": "",
+            "endTime": "",
+            "count": 2,
+            "dividendType": 0,
+            "timeoutMs": 10000,
+        },
+    )
+
+    assert result["kind"] == kind
+    assert result["items"] == [{"Code": "688318.SH"}]
+    assert fake_client.calls == [
+        (
+            expected_method,
+            {
+                "formula_name": "UPN",
+                "formula_arg": "3",
+                "return_count": 1,
+                "return_date": False,
+                "stock_list": ["688318.SH"],
+                "stock_period": "1d",
+                "start_time": "",
+                "end_time": "",
+                "count": 2,
+                "dividend_type": 0,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_execute_formula_timeout_raises_stable_error():
+    fake_client = SlowTdxHttpClient({})
+    provider = TdxDatasourceProvider(fake_client)
+
+    with pytest.raises(Exception) as exc_info:
+        await provider.execute_formula("xg", "UPN", "3", None, timeout_ms=1)
+
+    assert exc_info.value.code == "FORMULA_TIMEOUT"
+    assert exc_info.value.retryable is True
 
 
 @pytest.mark.asyncio

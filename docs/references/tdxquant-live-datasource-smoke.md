@@ -336,6 +336,38 @@ stable outside trading hours:
    - envelope `ok=true`
    - `data.items` is non-empty and contains `symbol`, `field`, and `value`
 
+### Reference/Instrument Optional Mode
+
+Run this when validating Phase 2 reference/instrument coverage:
+
+```powershell
+.\scripts\run-runtime-checks.ps1 `
+  -ApplianceRoot F:\quant\MistAPI `
+  -IncludeReferenceInstrumentSmoke
+```
+
+The optional probe uses `get_gb_info` plus
+`/v1/reference/share-capital/query` for a stable read-only check.
+
+### Formula Optional Mode
+
+Run this when validating Phase 4 formula coverage:
+
+```powershell
+.\scripts\run-runtime-checks.ps1 `
+  -ApplianceRoot F:\quant\MistAPI `
+  -IncludeFormulaSmoke
+```
+
+The optional probe uses read-only formula metadata:
+
+1. `POST /v1/raw/tdx/call` with `method=formula_get_all`
+2. `POST /v1/formulas/metadata/query`
+
+Formula execution endpoints are normalized but intentionally guarded by request
+size and timeout limits; run execution tests separately with operator-selected
+formulas.
+
 ### Live Subscription Mode
 
 Live mode is trading-time sensitive:

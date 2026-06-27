@@ -239,6 +239,75 @@ class TdxReportDataQueryRequest(TdxModel):
     symbol: str
 
 
+class TdxFormulaFormatDataRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    data: dict[str, Any] = Field(default_factory=dict)
+    timeout_ms: int = Field(default=10000, alias="timeoutMs")
+
+
+class TdxFormulaSetDataRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    stock_code: str = Field(alias="stockCode")
+    stock_period: str = Field(default="1d", alias="stockPeriod")
+    stock_data: list[dict[str, Any]] = Field(default_factory=list, alias="stockData")
+    count: int = -1
+    dividend_type: int = Field(default=0, alias="dividendType")
+    timeout_ms: int = Field(default=10000, alias="timeoutMs")
+
+
+class TdxFormulaSetDataInfoRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    stock_code: str = Field(alias="stockCode")
+    stock_period: str = Field(default="1d", alias="stockPeriod")
+    start_time: str = Field(default="", alias="startTime")
+    end_time: str = Field(default="", alias="endTime")
+    count: int = -1
+    dividend_type: int = Field(default=0, alias="dividendType")
+    timeout_ms: int = Field(default=10000, alias="timeoutMs")
+
+
+class TdxFormulaGetDataRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    timeout_ms: int = Field(default=10000, alias="timeoutMs")
+
+
+class TdxFormulaMetadataQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    formula_type: int = Field(default=0, alias="formulaType")
+    timeout_ms: int = Field(default=10000, alias="timeoutMs")
+
+
+class TdxFormulaMetadataInfoQueryRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    formula_type: int = Field(default=0, alias="formulaType")
+    formula_code: str = Field(alias="formulaCode")
+    timeout_ms: int = Field(default=10000, alias="timeoutMs")
+
+
+class TdxFormulaExecutionRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    formula_name: str = Field(alias="formulaName")
+    formula_arg: str = Field(default="", alias="formulaArg")
+    xsflag: int | None = None
+    timeout_ms: int = Field(default=10000, alias="timeoutMs")
+
+
+class TdxFormulaBatchExecutionRequest(TdxModel):
+    provider: Literal["tdx", "qmt"] = "tdx"
+    formula_name: str = Field(alias="formulaName")
+    formula_arg: str = Field(default="", alias="formulaArg")
+    xsflag: int | None = None
+    return_count: int = Field(default=1, alias="returnCount")
+    return_date: bool = Field(default=False, alias="returnDate")
+    stock_list: list[str] = Field(default_factory=list, alias="stockList")
+    stock_period: str = Field(default="1d", alias="stockPeriod")
+    start_time: str = Field(default="", alias="startTime")
+    end_time: str = Field(default="", alias="endTime")
+    count: int = -1
+    dividend_type: int = Field(default=0, alias="dividendType")
+    timeout_ms: int = Field(default=10000, alias="timeoutMs")
+
+
 class RawTdxCallRequest(TdxModel):
     method: str
     params: dict[str, Any] = Field(default_factory=dict)

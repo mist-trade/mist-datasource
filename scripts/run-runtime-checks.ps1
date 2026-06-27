@@ -24,7 +24,9 @@ param(
     [switch]$SkipMySQL,
     [switch]$SkipSmoke,
     [switch]$SkipWebSocket,
+    [switch]$IncludeReferenceInstrumentSmoke,
     [switch]$IncludeFinanceReportSmoke,
+    [switch]$IncludeFormulaSmoke,
     [switch]$RequireLiveBar,
     [switch]$AllowWebSocketSubscriptionChange,
     [switch]$AllowTdxHttpUnavailable
@@ -308,6 +310,17 @@ function Assert-ArrayNotEmpty {
     }
 }
 
+function Assert-ValuePresent {
+    param(
+        [object]$Value,
+        [string]$Name
+    )
+
+    if ($null -eq $Value) {
+        throw "$Name must be present."
+    }
+}
+
 function Assert-NumericProperty {
     param(
         [object]$Object,
@@ -587,6 +600,46 @@ function Test-FinanceReportSmoke {
     }
 }
 
+function Test-ReferenceInstrumentSmoke {
+    $rawShareCapital = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/raw/tdx/call" `
+        -Payload @{
+            method = "get_gb_info"
+            params = @{
+                stock_code = $RawSymbol
+                date_list = @()
+                count = 1
+            }
+        }
+    Assert-EnvelopeOk -Envelope $rawShareCapital -Name "raw get_gb_info"
+    Assert-ValuePresent -Value $rawShareCapital.data.result -Name "raw get_gb_info result"
+
+    $shareCapital = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/reference/share-capital/query" `
+        -Payload @{ symbol = $Symbol; count = 1 }
+    Assert-EnvelopeOk -Envelope $shareCapital -Name "share-capital query"
+    Assert-ArrayNotEmpty -Value $shareCapital.data.items -Name "share-capital items"
+}
+
+function Test-FormulaSmoke {
+    $rawFormulaList = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/raw/tdx/call" `
+        -Payload @{
+            method = "formula_get_all"
+            params = @{
+                formula_type = 0
+            }
+        }
+    Assert-EnvelopeOk -Envelope $rawFormulaList -Name "raw formula_get_all"
+    Assert-ValuePresent -Value $rawFormulaList.data.result -Name "raw formula_get_all result"
+
+    $formulaList = Invoke-JsonPost `
+        -Uri "$BaseUrl/v1/formulas/metadata/query" `
+        -Payload @{ formulaType = 0 }
+    Assert-EnvelopeOk -Envelope $formulaList -Name "formula metadata query"
+    Assert-ArrayNotEmpty -Value $formulaList.data.items -Name "formula metadata items"
+}
+
 function Receive-WebSocketText {
     param(
         [System.Net.WebSockets.ClientWebSocket]$Socket,
@@ -794,9 +847,21 @@ try {
         }
     }
 
+    if ($IncludeReferenceInstrumentSmoke) {
+        Invoke-RuntimeStep "TDX reference/instrument HTTP smoke" {
+            Test-ReferenceInstrumentSmoke
+        }
+    }
+
     if ($IncludeFinanceReportSmoke) {
         Invoke-RuntimeStep "TDX finance/report HTTP smoke" {
             Test-FinanceReportSmoke
+        }
+    }
+
+    if ($IncludeFormulaSmoke) {
+        Invoke-RuntimeStep "TDX formula HTTP smoke" {
+            Test-FormulaSmoke
         }
     }
 

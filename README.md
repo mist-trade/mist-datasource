@@ -344,6 +344,9 @@ TDX/Backend 的 WinSW 部署。
 # 加测 Phase 3 财务/报告链路；默认用 get_gp_one_data，适合非交易时段
 .\scripts\run-runtime-checks.ps1 -ApplianceRoot F:\quant\MistAPI -IncludeFinanceReportSmoke
 
+# 加测 Phase 2/4 深烟测；默认不跑，适合人工真机验证时开启
+.\scripts\run-runtime-checks.ps1 -ApplianceRoot F:\quant\MistAPI -IncludeReferenceInstrumentSmoke -IncludeFormulaSmoke
+
 # 需要从 datasource 侧重跑安装/临时启动验证时显式开启
 .\scripts\run-runtime-checks.ps1 -RunDatasourceInstall -RunDatasourceStartupTest
 ```
@@ -352,7 +355,9 @@ TDX/Backend 的 WinSW 部署。
 shape、normalized bars/snapshots/sectors、Phase 1 calendar/security/sector-list/
 price-volume endpoints、WebSocket ping/pong，以及 appliance health。通过
 `-IncludeFinanceReportSmoke` 可额外检查 Phase 3 finance/report 的 native
-`get_gp_one_data` 与 normalized `/v1/finance/single-data/query`。
+`get_gp_one_data` 与 normalized `/v1/finance/single-data/query`；
+`-IncludeReferenceInstrumentSmoke` 与 `-IncludeFormulaSmoke` 可额外检查
+Phase 2 reference/instrument 和 Phase 4 formula 的 read-only 路径。
 
 `/v1` normalized 请求默认使用 `provider=tdx`。如果显式传
 `provider=qmt`，当前会返回 `PROVIDER_CAPABILITY_UNSUPPORTED`，用于固定

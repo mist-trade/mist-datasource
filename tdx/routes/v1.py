@@ -15,6 +15,14 @@ from src.datasource.tdx_models import (
     TdxDividendFactorsQueryRequest,
     TdxFinancialDataByDateQueryRequest,
     TdxFinancialDataQueryRequest,
+    TdxFormulaBatchExecutionRequest,
+    TdxFormulaExecutionRequest,
+    TdxFormulaFormatDataRequest,
+    TdxFormulaGetDataRequest,
+    TdxFormulaMetadataInfoQueryRequest,
+    TdxFormulaMetadataQueryRequest,
+    TdxFormulaSetDataInfoRequest,
+    TdxFormulaSetDataRequest,
     TdxIpoInfoQueryRequest,
     TdxMarketTradeAggregateByDateQueryRequest,
     TdxMarketTradeAggregateQueryRequest,
@@ -34,8 +42,15 @@ from src.datasource.tdx_models import (
     TdxTrackingEtfsQueryRequest,
     TdxTradingDatesQueryRequest,
 )
+from src.datasource.tdx_provider import TdxFormulaRequestLimitError
 
 router = APIRouter()
+
+MAX_FORMULA_ARG_LENGTH = 2048
+MAX_FORMULA_STOCKS = 200
+MAX_FORMULA_STOCK_DATA_ROWS = 24000
+MAX_FORMULA_COUNT = 24000
+MAX_FORMULA_TIMEOUT_MS = 30000
 
 
 class TdxV1Model(BaseModel):
@@ -52,6 +67,12 @@ class FormulaCallRequest(TdxV1Model):
     name: str
     args: dict[str, Any] | list[Any] | None = None
     context: dict[str, Any] = Field(default_factory=dict)
+
+
+def _payload_alias(payload: Any) -> dict[str, Any]:
+    data = payload.model_dump(by_alias=True)
+    data.pop("provider", None)
+    return data
 
 
 def _get_provider() -> Any:
@@ -131,6 +152,49 @@ def _provider_unavailable(provider: str) -> DatasourceError:
 
 async def _wrap(key: str, awaitable) -> dict[str, Any]:
     return {key: await awaitable}
+
+
+def _validate_formula_limits(payload: Any) -> None:
+    timeout_ms = getattr(payload, "timeout_ms", 10000)
+    if timeout_ms > MAX_FORMULA_TIMEOUT_MS:
+        raise TdxFormulaRequestLimitError(
+            limit="timeoutMs",
+            observed=timeout_ms,
+            maximum=MAX_FORMULA_TIMEOUT_MS,
+        )
+
+    formula_arg = getattr(payload, "formula_arg", "")
+    if len(formula_arg) > MAX_FORMULA_ARG_LENGTH:
+        raise TdxFormulaRequestLimitError(
+            limit="formulaArg",
+            observed=len(formula_arg),
+            maximum=MAX_FORMULA_ARG_LENGTH,
+        )
+
+    stock_list = getattr(payload, "stock_list", [])
+    if len(stock_list) > MAX_FORMULA_STOCKS:
+        raise TdxFormulaRequestLimitError(
+            limit="stockList",
+            observed=len(stock_list),
+            maximum=MAX_FORMULA_STOCKS,
+        )
+
+    stock_data = getattr(payload, "stock_data", [])
+    if len(stock_data) > MAX_FORMULA_STOCK_DATA_ROWS:
+        raise TdxFormulaRequestLimitError(
+            limit="stockData",
+            observed=len(stock_data),
+            maximum=MAX_FORMULA_STOCK_DATA_ROWS,
+        )
+
+    for field_name in ("count", "return_count"):
+        count_value = getattr(payload, field_name, -1)
+        if count_value > MAX_FORMULA_COUNT:
+            raise TdxFormulaRequestLimitError(
+                limit=field_name,
+                observed=count_value,
+                maximum=MAX_FORMULA_COUNT,
+            )
 
 
 async def _call_provider(
@@ -596,6 +660,221 @@ async def query_report_data(payload: TdxReportDataQueryRequest, request: Request
         provider_id=payload.provider,
         capability_family="report-data",
         operation_name="reports/data/query",
+    )
+
+
+@router.post("/v1/formulas/data/format/query")
+async def query_formula_format_data(payload: TdxFormulaFormatDataRequest, request: Request):
+    async def operation(provider):
+        _validate_formula_limits(payload)
+        return await _wrap(
+            "items",
+            provider.format_formula_data(payload.data, timeout_ms=payload.timeout_ms),
+        )
+
+    return await _call_provider(
+        request,
+        operation,
+        provider_id=payload.provider,
+        capability_family="formula-data",
+        operation_name="formulas/data/format/query",
+    )
+
+
+@router.post("/v1/formulas/data/set")
+async def set_formula_data(payload: TdxFormulaSetDataRequest, request: Request):
+    async def operation(provider):
+        _validate_formula_limits(payload)
+        return await _wrap("result", provider.set_formula_data(_payload_alias(payload)))
+
+    return await _call_provider(
+        request,
+        operation,
+        provider_id=payload.provider,
+        capability_family="formula-data",
+        operation_name="formulas/data/set",
+    )
+
+
+@router.post("/v1/formulas/data/set-info")
+async def set_formula_data_info(payload: TdxFormulaSetDataInfoRequest, request: Request):
+    async def operation(provider):
+        _validate_formula_limits(payload)
+        return await _wrap("result", provider.set_formula_data_info(_payload_alias(payload)))
+
+    return await _call_provider(
+        request,
+        operation,
+        provider_id=payload.provider,
+        capability_family="formula-data",
+        operation_name="formulas/data/set-info",
+    )
+
+
+@router.post("/v1/formulas/data/query")
+async def query_formula_data(payload: TdxFormulaGetDataRequest, request: Request):
+    async def operation(provider):
+        _validate_formula_limits(payload)
+        return await _wrap("item", provider.get_formula_data(payload.timeout_ms))
+
+    return await _call_provider(
+        request,
+        operation,
+        provider_id=payload.provider,
+        capability_family="formula-data",
+        operation_name="formulas/data/query",
+    )
+
+
+@router.post("/v1/formulas/metadata/query")
+async def query_formula_metadata(payload: TdxFormulaMetadataQueryRequest, request: Request):
+    async def operation(provider):
+        _validate_formula_limits(payload)
+        return await _wrap(
+            "items",
+            provider.get_formula_list(payload.formula_type, payload.timeout_ms),
+        )
+
+    return await _call_provider(
+        request,
+        operation,
+        provider_id=payload.provider,
+        capability_family="formula-metadata",
+        operation_name="formulas/metadata/query",
+    )
+
+
+@router.post("/v1/formulas/metadata/info/query")
+async def query_formula_metadata_info(
+    payload: TdxFormulaMetadataInfoQueryRequest,
+    request: Request,
+):
+    async def operation(provider):
+        _validate_formula_limits(payload)
+        return await _wrap(
+            "item",
+            provider.get_formula_info(
+                payload.formula_type,
+                payload.formula_code,
+                payload.timeout_ms,
+            ),
+        )
+
+    return await _call_provider(
+        request,
+        operation,
+        provider_id=payload.provider,
+        capability_family="formula-metadata",
+        operation_name="formulas/metadata/info/query",
+    )
+
+
+async def _execute_formula_route(
+    payload: TdxFormulaExecutionRequest,
+    request: Request,
+    *,
+    kind: str,
+    operation_name: str,
+):
+    async def operation(provider):
+        _validate_formula_limits(payload)
+        return await _wrap(
+            "result",
+            provider.execute_formula(
+                kind,
+                payload.formula_name,
+                payload.formula_arg,
+                payload.xsflag,
+                payload.timeout_ms,
+            ),
+        )
+
+    return await _call_provider(
+        request,
+        operation,
+        provider_id=payload.provider,
+        capability_family="formula-execution",
+        operation_name=operation_name,
+    )
+
+
+@router.post("/v1/formulas/zb/execute")
+async def execute_formula_zb(payload: TdxFormulaExecutionRequest, request: Request):
+    return await _execute_formula_route(
+        payload,
+        request,
+        kind="zb",
+        operation_name="formulas/zb/execute",
+    )
+
+
+@router.post("/v1/formulas/xg/execute")
+async def execute_formula_xg(payload: TdxFormulaExecutionRequest, request: Request):
+    return await _execute_formula_route(
+        payload,
+        request,
+        kind="xg",
+        operation_name="formulas/xg/execute",
+    )
+
+
+@router.post("/v1/formulas/exp/execute")
+async def execute_formula_exp(payload: TdxFormulaExecutionRequest, request: Request):
+    return await _execute_formula_route(
+        payload,
+        request,
+        kind="exp",
+        operation_name="formulas/exp/execute",
+    )
+
+
+async def _execute_formula_batch_route(
+    payload: TdxFormulaBatchExecutionRequest,
+    request: Request,
+    *,
+    kind: str,
+    operation_name: str,
+):
+    async def operation(provider):
+        _validate_formula_limits(payload)
+        return await _wrap("result", provider.execute_formula_batch(kind, _payload_alias(payload)))
+
+    return await _call_provider(
+        request,
+        operation,
+        provider_id=payload.provider,
+        capability_family="formula-batch-execution",
+        operation_name=operation_name,
+    )
+
+
+@router.post("/v1/formulas/batch/xg/execute")
+async def execute_formula_batch_xg(payload: TdxFormulaBatchExecutionRequest, request: Request):
+    return await _execute_formula_batch_route(
+        payload,
+        request,
+        kind="xg",
+        operation_name="formulas/batch/xg/execute",
+    )
+
+
+@router.post("/v1/formulas/batch/zb/execute")
+async def execute_formula_batch_zb(payload: TdxFormulaBatchExecutionRequest, request: Request):
+    return await _execute_formula_batch_route(
+        payload,
+        request,
+        kind="zb",
+        operation_name="formulas/batch/zb/execute",
+    )
+
+
+@router.post("/v1/formulas/batch/exp/execute")
+async def execute_formula_batch_exp(payload: TdxFormulaBatchExecutionRequest, request: Request):
+    return await _execute_formula_batch_route(
+        payload,
+        request,
+        kind="exp",
+        operation_name="formulas/batch/exp/execute",
     )
 
 

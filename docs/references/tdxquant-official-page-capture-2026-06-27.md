@@ -130,3 +130,29 @@ The runtime smoke script includes optional `-IncludeFinanceReportSmoke`, which
 uses `get_gp_one_data` plus `/v1/finance/single-data/query` as a lightweight
 outside-trading-hours probe. Narrow report fields still need Windows smoke
 confirmation before backend product code relies on them.
+
+## Phase 4 Normalized Endpoint Capture
+
+Implemented after this capture using the reviewed official pages and coverage
+matrix:
+
+| Normalized endpoint | Primary TDX methods |
+| --- | --- |
+| `/v1/formulas/data/format/query` | `formula_format_data` |
+| `/v1/formulas/data/set` | `formula_set_data` |
+| `/v1/formulas/data/set-info` | `formula_set_data_info` |
+| `/v1/formulas/data/query` | `formula_get_data` |
+| `/v1/formulas/metadata/query` | `formula_get_all` |
+| `/v1/formulas/metadata/info/query` | `formula_get_info` |
+| `/v1/formulas/zb/execute` | `formula_zb` |
+| `/v1/formulas/xg/execute` | `formula_xg` |
+| `/v1/formulas/exp/execute` | `formula_exp` |
+| `/v1/formulas/batch/zb/execute` | `formula_process_mul_zb` |
+| `/v1/formulas/batch/xg/execute` | `formula_process_mul_xg` |
+| `/v1/formulas/batch/exp/execute` | `formula_process_mul_exp` |
+
+Formula execution endpoints are exposed as operator-oriented normalized reads
+with request-size limits and `timeoutMs`. They return stable datasource errors
+such as `FORMULA_REQUEST_LIMIT_EXCEEDED` and `FORMULA_TIMEOUT`; production
+strategy formulas should still be smoke-tested on a logged-in Windows TDX
+terminal before backend product code depends on narrow formula result fields.

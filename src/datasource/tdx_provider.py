@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any
 
 from src.core.config import settings
@@ -13,6 +14,37 @@ from src.datasource.tdx_normalization import (
 
 TDX_MARKET_DATA_FIELDS = ["Open", "High", "Low", "Close", "Volume", "Amount"]
 TDX_HEALTH_PROBE_SYMBOL = "600519.SH"
+
+
+class TdxFormulaRequestLimitError(Exception):
+    def __init__(
+        self,
+        *,
+        limit: str,
+        observed: int,
+        maximum: int,
+    ) -> None:
+        super().__init__(f"Formula request exceeds {limit} limit")
+        self.code = "FORMULA_REQUEST_LIMIT_EXCEEDED"
+        self.message = f"Formula request exceeds {limit} limit"
+        self.retryable = False
+        self.details = {
+            "limit": limit,
+            "observed": observed,
+            "maximum": maximum,
+        }
+
+
+class TdxFormulaTimeoutError(Exception):
+    def __init__(self, *, method: str, timeout_ms: int) -> None:
+        super().__init__(f"Formula method {method} timed out after {timeout_ms} ms")
+        self.code = "FORMULA_TIMEOUT"
+        self.message = f"Formula method {method} timed out after {timeout_ms} ms"
+        self.retryable = True
+        self.details = {
+            "method": method,
+            "timeoutMs": timeout_ms,
+        }
 
 
 class TdxDatasourceProvider:
@@ -396,6 +428,136 @@ class TdxDatasourceProvider:
         tdx_symbol = to_tdx_http_code(symbol)
         native = await self.client.call("get_report_data", {"stock_code": tdx_symbol})
         return _normalize_report_data_items(tdx_symbol, native)
+
+    async def format_formula_data(
+        self,
+        data: dict[str, Any],
+        timeout_ms: int = 10000,
+    ) -> list[dict[str, Any]]:
+        native = await self._call_formula_method(
+            "formula_format_data",
+            {"data_dict": data},
+            timeout_ms=timeout_ms,
+        )
+        return _normalize_formula_data_items(native)
+
+    async def set_formula_data(self, payload: dict[str, Any]) -> dict[str, Any]:
+        native = await self._call_formula_method(
+            "formula_set_data",
+            {
+                "stock_code": payload.get("stockCode", ""),
+                "stock_period": payload.get("stockPeriod", "1d"),
+                "stock_data": payload.get("stockData", []),
+                "count": payload.get("count", -1),
+                "dividend_type": payload.get("dividendType", 0),
+            },
+            timeout_ms=int(payload.get("timeoutMs", 10000)),
+        )
+        return _normalize_formula_operation_result(native)
+
+    async def set_formula_data_info(self, payload: dict[str, Any]) -> dict[str, Any]:
+        native = await self._call_formula_method(
+            "formula_set_data_info",
+            {
+                "stock_code": payload.get("stockCode", ""),
+                "stock_period": payload.get("stockPeriod", "1d"),
+                "start_time": payload.get("startTime", ""),
+                "end_time": payload.get("endTime", ""),
+                "count": payload.get("count", -1),
+                "dividend_type": payload.get("dividendType", 0),
+            },
+            timeout_ms=int(payload.get("timeoutMs", 10000)),
+        )
+        return _normalize_formula_operation_result(native)
+
+    async def get_formula_data(self, timeout_ms: int = 10000) -> dict[str, Any]:
+        native = await self._call_formula_method("formula_get_data", {}, timeout_ms=timeout_ms)
+        return _normalize_formula_data_item(native)
+
+    async def get_formula_list(
+        self,
+        formula_type: int = 0,
+        timeout_ms: int = 10000,
+    ) -> list[dict[str, Any]]:
+        native = await self._call_formula_method(
+            "formula_get_all",
+            {"formula_type": formula_type},
+            timeout_ms=timeout_ms,
+        )
+        return [_normalize_formula_metadata_item(item) for item in _native_items(native)]
+
+    async def get_formula_info(
+        self,
+        formula_type: int,
+        formula_code: str,
+        timeout_ms: int = 10000,
+    ) -> dict[str, Any]:
+        native = await self._call_formula_method(
+            "formula_get_info",
+            {
+                "formula_type": formula_type,
+                "formula_code": formula_code,
+            },
+            timeout_ms=timeout_ms,
+        )
+        return _normalize_formula_info_item(native)
+
+    async def execute_formula(
+        self,
+        kind: str,
+        formula_name: str,
+        formula_arg: str,
+        xsflag: int | None,
+        timeout_ms: int,
+    ) -> dict[str, Any]:
+        method = _formula_execution_method(kind)
+        params = {
+            "formula_name": formula_name,
+            "formula_arg": formula_arg,
+        }
+        if kind == "zb" and xsflag is not None:
+            params["xsflag"] = xsflag
+        native = await self._call_formula_method(method, params, timeout_ms=timeout_ms)
+        return _normalize_formula_execution_result(kind, formula_name, native)
+
+    async def execute_formula_batch(
+        self,
+        kind: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        method = _formula_batch_method(kind)
+        native = await self._call_formula_method(
+            method,
+            {
+                "formula_name": payload.get("formulaName", ""),
+                "formula_arg": payload.get("formulaArg", ""),
+                "return_count": payload.get("returnCount", 1),
+                "return_date": payload.get("returnDate", False),
+                "stock_list": payload.get("stockList", []),
+                "stock_period": payload.get("stockPeriod", "1d"),
+                "start_time": payload.get("startTime", ""),
+                "end_time": payload.get("endTime", ""),
+                "count": payload.get("count", -1),
+                "dividend_type": payload.get("dividendType", 0),
+            },
+            timeout_ms=int(payload.get("timeoutMs", 10000)),
+        )
+        return _normalize_formula_batch_result(kind, payload.get("formulaName", ""), native)
+
+    async def _call_formula_method(
+        self,
+        method: str,
+        params: dict[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Any:
+        try:
+            return await asyncio.wait_for(
+                self.client.call(method, params),
+                timeout=max(timeout_ms, 1) / 1000,
+            )
+        except TimeoutError as exc:
+            raise TdxFormulaTimeoutError(method=method, timeout_ms=timeout_ms) from exc
 
     async def raw_call(self, method: str, params: dict[str, Any] | list[Any] | None = None) -> Any:
         return await self.client.call(method, params)
@@ -830,6 +992,131 @@ def _normalize_report_data_items(symbol: str, native: Any) -> list[dict[str, Any
     ]
 
 
+def _normalize_formula_data_items(native: Any) -> list[dict[str, Any]]:
+    values = _unwrap_tdx_value(native)
+    if isinstance(values, dict):
+        return [
+            {
+                "symbol": normalize_symbol(str(symbol)),
+                "rows": _as_sequence(rows),
+                "provider": "tdx",
+                "raw": rows,
+            }
+            for symbol, rows in values.items()
+        ]
+    if isinstance(values, list | tuple):
+        return [
+            {
+                "symbol": None,
+                "rows": _as_sequence(values),
+                "provider": "tdx",
+                "raw": values,
+            }
+        ]
+    return []
+
+
+def _normalize_formula_data_item(native: Any) -> dict[str, Any]:
+    items = _normalize_formula_data_items(native)
+    if items:
+        return items[0]
+    values = _unwrap_tdx_value(native)
+    return {
+        "symbol": None,
+        "rows": _as_sequence(values),
+        "provider": "tdx",
+        "raw": values,
+    }
+
+
+def _normalize_formula_operation_result(native: Any) -> dict[str, Any]:
+    values = _unwrap_tdx_value(native)
+    if isinstance(values, dict):
+        message = _first_native_value(values, "Result", "message", "Message")
+        return {
+            "ok": True,
+            "message": str(message) if message is not None else "OK",
+            "provider": "tdx",
+            "raw": values,
+        }
+    if isinstance(values, bool):
+        return {"ok": values, "message": "OK" if values else "FAILED", "provider": "tdx", "raw": values}
+    return {"ok": True, "message": str(values), "provider": "tdx", "raw": values}
+
+
+def _normalize_formula_metadata_item(item: Any) -> dict[str, Any]:
+    native = item if isinstance(item, dict) else {"value": item}
+    code = _first_native_value(native, "FormulaCode", "Code", "code")
+    name = _first_native_value(native, "FormulaName", "Name", "name")
+    formula_type = _first_native_value(native, "Type", "formulaType", "type")
+    is_system = _first_native_value(native, "IsSystem", "isSystem")
+    return {
+        "code": str(code) if code is not None else "",
+        "name": str(name) if name is not None else None,
+        "type": _optional_int(formula_type),
+        "isSystem": _optional_bool(is_system),
+        "provider": "tdx",
+        "raw": item,
+    }
+
+
+def _normalize_formula_info_item(native: Any) -> dict[str, Any]:
+    values = _unwrap_tdx_value(native)
+    item = values if isinstance(values, dict) else {"value": values}
+    metadata = _normalize_formula_metadata_item(item)
+    metadata["params"] = _as_sequence(_first_native_value(item, "Params", "params"))
+    metadata["lines"] = _as_sequence(_first_native_value(item, "Lines", "lines"))
+    return metadata
+
+
+def _normalize_formula_execution_result(
+    kind: str,
+    formula_name: str,
+    native: Any,
+) -> dict[str, Any]:
+    values = _unwrap_tdx_value(native)
+    return {
+        "kind": kind,
+        "formulaName": formula_name,
+        "values": values,
+        "provider": "tdx",
+        "raw": values,
+    }
+
+
+def _normalize_formula_batch_result(
+    kind: str,
+    formula_name: str,
+    native: Any,
+) -> dict[str, Any]:
+    values = _unwrap_tdx_value(native)
+    return {
+        "kind": kind,
+        "formulaName": formula_name,
+        "items": _native_items(values),
+        "provider": "tdx",
+        "raw": values,
+    }
+
+
+def _formula_execution_method(kind: str) -> str:
+    methods = {
+        "zb": "formula_zb",
+        "xg": "formula_xg",
+        "exp": "formula_exp",
+    }
+    return methods[kind]
+
+
+def _formula_batch_method(kind: str) -> str:
+    methods = {
+        "zb": "formula_process_mul_zb",
+        "xg": "formula_process_mul_xg",
+        "exp": "formula_process_mul_exp",
+    }
+    return methods[kind]
+
+
 def _native_items(native: Any, *preferred_list_fields: str) -> list[Any]:
     values = _unwrap_tdx_value(native)
     if isinstance(values, list | tuple):
@@ -1010,3 +1297,25 @@ def _optional_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_bool(value: Any) -> bool | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes"}:
+        return True
+    if text in {"0", "false", "no"}:
+        return False
+    return None
