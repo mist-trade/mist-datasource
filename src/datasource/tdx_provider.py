@@ -11,6 +11,7 @@ from src.datasource.tdx_normalization import (
 )
 
 TDX_MARKET_DATA_FIELDS = ["Open", "High", "Low", "Close", "Volume", "Amount"]
+TDX_HEALTH_PROBE_SYMBOL = "SH000001"
 
 
 class TdxDatasourceProvider:
@@ -104,7 +105,13 @@ class TdxDatasourceProvider:
 
     async def health(self) -> dict[str, Any]:
         try:
-            await self.client.call("ping", {})
+            await self.client.call(
+                "get_market_snapshot",
+                {
+                    "stock_code": TDX_HEALTH_PROBE_SYMBOL,
+                    "field_list": [],
+                },
+            )
         except Exception as exc:
             return {
                 "tdxHttpReachable": False,

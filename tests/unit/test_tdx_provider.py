@@ -179,14 +179,22 @@ async def test_collect_recent_bars_uses_count_without_date_range():
 
 @pytest.mark.asyncio
 async def test_health_reports_reachability_without_live_network_when_fake_client_is_injected():
-    fake_client = FakeTdxHttpClient({"ping": {"ok": True}})
+    fake_client = FakeTdxHttpClient({"get_market_snapshot": native_snapshot()})
     provider = TdxDatasourceProvider(fake_client)
 
     health = await provider.health()
 
     assert health["tdxHttpReachable"] is True
     assert health["lastError"] is None
-    assert fake_client.calls == [("ping", {})]
+    assert fake_client.calls == [
+        (
+            "get_market_snapshot",
+            {
+                "stock_code": "SH000001",
+                "field_list": [],
+            },
+        )
+    ]
 
 
 @pytest.mark.asyncio

@@ -48,6 +48,16 @@ function Invoke-JsonPost {
         -TimeoutSec 20
 }
 
+function ConvertTo-TdxNativeSymbol {
+    param([string]$Symbol)
+
+    $normalized = $Symbol.Trim().ToUpperInvariant()
+    if ($normalized -match "^(?<code>\d{6})\.(?<market>SH|SZ)$") {
+        return "$($Matches.market)$($Matches.code)"
+    }
+    return $normalized
+}
+
 function Receive-WebSocketText {
     param(
         [System.Net.WebSockets.ClientWebSocket]$Socket,
@@ -97,6 +107,7 @@ function Send-WebSocketJson {
 
 try {
     $BaseUrl = $BaseUrl.TrimEnd("/")
+    $rawSymbol = ConvertTo-TdxNativeSymbol -Symbol $Symbol
 
     Write-Host "Checking health: $BaseUrl/health"
     $health = Invoke-RestMethod -Method Get -Uri "$BaseUrl/health" -TimeoutSec 20
@@ -108,7 +119,16 @@ try {
     Write-Host "Checking raw TDX call endpoint."
     $raw = Invoke-JsonPost `
         -Uri "$BaseUrl/v1/raw/tdx/call" `
-        -Payload @{ method = "ping"; params = @{} }
+        -Payload @{
+            method = "get_market_data"
+            params = @{
+                stock_list = @($rawSymbol)
+                field_list = @("Open", "High", "Low", "Close", "Volume", "Amount")
+                period = "1d"
+                count = 1
+                dividend_type = "none"
+            }
+        }
     Assert-EnvelopeOk -Envelope $raw -Name "raw TDX call"
 
     Write-Host "Checking normalized bars query endpoint."

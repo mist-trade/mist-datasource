@@ -60,6 +60,7 @@ $windowsEnvExample = Get-Content (Join-Path $ProjectDir ".env.windows.example") 
 $deployWindows = Get-Content (Join-Path $ProjectDir "scripts\deploy_windows.ps1") -Raw
 $runtimeChecks = Get-Content (Join-Path $ProjectDir "scripts\run-runtime-checks.ps1") -Raw
 $tdxWinswInstall = Get-Content (Join-Path $ProjectDir "scripts\winsw\install-tdx-datasource.ps1") -Raw
+$tdxWinswSmoke = Get-Content (Join-Path $ProjectDir "scripts\winsw\test-tdx-datasource.ps1") -Raw
 Assert-Match "default TDX SDK path" $windowsEnvExample "TDX_SDK_PATH=F:/quant/tdx/PYPlugins/user"
 Assert-Match "default QMT path" $windowsEnvExample "QMT_PATH=F:/quant/qmt"
 Assert-Match "TDX comment points SDK path to user directory" $windowsEnvExample "TDX_SDK_PATH points to the user directory that contains tqcenter.py."
@@ -97,6 +98,11 @@ Assert-Match "TDX WinSW installer accepts started-successfully output" $tdxWinsw
 Assert-Match "TDX WinSW installer clears native exit code after success" $tdxWinswInstall '$global:LASTEXITCODE = 0'
 Assert-Match "TDX WinSW installer resolves packaged uv" $tdxWinswInstall "Resolve-UvExe"
 Assert-Match "TDX WinSW installer default executable can be resolved" $tdxWinswInstall 'if (-not $Executable)'
+Assert-Match "TDX WinSW smoke uses supported market data method" $tdxWinswSmoke "get_market_data"
+if ($tdxWinswSmoke -match [regex]::Escape('method = "ping"')) {
+    throw "TDX WinSW smoke must not call unsupported raw ping."
+}
+Write-Host "  [PASS] TDX WinSW smoke avoids unsupported raw ping" -ForegroundColor Green
 if ($tdxWinswInstall -match [regex]::Escape('("refresh")')) {
     throw "TDX WinSW installer must not call refresh; older bundled WinSW builds do not support it."
 }
