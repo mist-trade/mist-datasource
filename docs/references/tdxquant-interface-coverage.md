@@ -98,9 +98,14 @@ Related references:
 | --- | --- | --- | --- | --- | --- |
 | `subscribe_hq` | <https://help.tdx.com.cn/quant/docs/markdown/ctx.stock.md/mindoc-1h1104d65vr68.html> | `internal-only` | `websocket-subscriptions` | QMT subscription equivalent can map to same WebSocket commands. | Unit tests for sync, callback dirty-marking, live optional smoke. |
 | `unsubscribe_hq` | <https://help.tdx.com.cn/quant/docs/markdown/ctx.stock.md/mindoc-1h112vh7jtsms.html> | `internal-only` | `websocket-subscriptions` | QMT subscription equivalent can map to same WebSocket commands. | Unit tests and live optional smoke. |
-| `get_subscribe_hq_stock_list` | <https://help.tdx.com.cn/quant/docs/markdown/ctx.stock.md/mindoc-1h1137r4k2mas.html> | `internal-only` | `websocket-subscriptions` | QMT equivalent unknown. | Runtime reconciliation tests. |
+| `get_subscribe_hq_stock_list` | <https://help.tdx.com.cn/quant/docs/markdown/ctx.stock.md/mindoc-1h1137r4k2mas.html> | `internal-only` | `websocket-subscriptions` | QMT equivalent unknown. | Runtime WebSocket reconciliation tests. |
 
 ## Admin/Operator Or Raw-Only Utilities
+
+`/v1/raw/tdx/call` is a datasource operator/debug escape hatch for smoke tests,
+official-doc exploration, and incident diagnostics. It is not a stable backend
+dependency, and normal Mist collection code must use normalized `/v1` endpoints
+or WebSocket commands instead.
 
 | TDX method | Source | Classification | Endpoint family | QMT alignment | Test strategy |
 | --- | --- | --- | --- | --- | --- |
