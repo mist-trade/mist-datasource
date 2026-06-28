@@ -1,4 +1,5 @@
 import asyncio
+import re
 from typing import Any
 
 from src.core.config import settings
@@ -14,6 +15,21 @@ from src.datasource.tdx_normalization import (
 
 TDX_MARKET_DATA_FIELDS = ["Open", "High", "Low", "Close", "Volume", "Amount"]
 TDX_HEALTH_PROBE_SYMBOL = "600519.SH"
+TDX_DATE_PREFIX_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
+
+
+def _to_tdx_native_date(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return text
+    if re.fullmatch(r"\d{8}", text):
+        return text
+    match = TDX_DATE_PREFIX_RE.match(text)
+    if match:
+        return "".join(match.groups())
+    return text
 
 
 class TdxFormulaRequestLimitError(Exception):
@@ -47,6 +63,28 @@ class TdxFormulaTimeoutError(Exception):
         }
 
 
+class TdxNativeError(Exception):
+    def __init__(self, native: dict[str, Any]) -> None:
+        native_error_id = str(native.get("ErrorId", "UNKNOWN"))
+        native_message = str(native.get("Error") or native.get("Message") or "TDX native error")
+        super().__init__(native_message)
+        self.code = "TDX_NATIVE_ERROR"
+        self.message = native_message
+        self.retryable = False
+        self.details = {
+            "nativeErrorId": native_error_id,
+            "native": native,
+        }
+
+
+def _raise_for_native_error(native: Any) -> None:
+    if not isinstance(native, dict):
+        return
+    error_id = native.get("ErrorId")
+    if error_id is not None and str(error_id) != "0":
+        raise TdxNativeError(native)
+
+
 class TdxDatasourceProvider:
     def __init__(self, client: TdxHttpClient | None = None) -> None:
         self.client = client or TdxHttpClient(settings.tdx.http_url)
@@ -68,8 +106,8 @@ class TdxDatasourceProvider:
             "stock_list": tdx_symbols,
             "field_list": fields if fields is not None else TDX_MARKET_DATA_FIELDS,
             "period": period,
-            "start_time": start_time,
-            "end_time": end_time,
+            "start_time": _to_tdx_native_date(start_time),
+            "end_time": _to_tdx_native_date(end_time),
             "count": count,
         }
         if dividend_type is not None:
@@ -81,6 +119,7 @@ class TdxDatasourceProvider:
             "get_market_data",
             params,
         )
+        _raise_for_native_error(native)
 
         bars: list[TdxBar] = []
         for symbol in tdx_symbols:

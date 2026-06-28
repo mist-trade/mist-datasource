@@ -104,7 +104,7 @@ async def test_get_bars_passes_requested_fields_and_adjustment_options():
     bars = await provider.get_bars(
         ["600519.SH"],
         period="1d",
-        start_time="2026-06-01",
+        start_time="2026-06-01T00:00:00+08:00",
         end_time="2026-06-26",
         count=20,
         fields=requested_fields,
@@ -119,8 +119,8 @@ async def test_get_bars_passes_requested_fields_and_adjustment_options():
                 "stock_list": ["600519.SH"],
                 "field_list": requested_fields,
                 "period": "1d",
-                "start_time": "2026-06-01",
-                "end_time": "2026-06-26",
+                "start_time": "20260601",
+                "end_time": "20260626",
                 "count": 20,
                 "dividend_type": "none",
                 "fill_data": False,
@@ -129,6 +129,46 @@ async def test_get_bars_passes_requested_fields_and_adjustment_options():
     ]
     assert bars[0].forwardFactor == 0.711862
     assert bars[0].volInStock == 182942480.0
+
+
+@pytest.mark.asyncio
+async def test_get_bars_formats_intraday_filters_for_native_tdx():
+    requested_fields = ["Open", "Close"]
+    fake_client = FakeTdxHttpClient({"get_market_data": native_bar_rows()})
+    provider = TdxDatasourceProvider(fake_client)
+
+    await provider.get_bars(
+        ["600519.SH"],
+        period="1m",
+        start_time="2026-06-26T09:30:00+08:00",
+        end_time="2026-06-26T15:00:00+08:00",
+        count=20,
+        fields=requested_fields,
+    )
+
+    assert fake_client.calls[0][1]["period"] == "1m"
+    assert fake_client.calls[0][1]["start_time"] == "20260626"
+    assert fake_client.calls[0][1]["end_time"] == "20260626"
+
+
+@pytest.mark.asyncio
+async def test_get_bars_raises_native_tdx_errors():
+    fake_client = FakeTdxHttpClient(
+        {"get_market_data": {"ErrorId": "5", "Error": "period error"}}
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    with pytest.raises(Exception) as exc:
+        await provider.get_bars(
+            ["600519.SH"],
+            period="60m",
+            start_time="2026-06-26T09:30:00+08:00",
+            end_time="2026-06-26T15:00:00+08:00",
+            count=20,
+        )
+
+    assert getattr(exc.value, "code") == "TDX_NATIVE_ERROR"
+    assert getattr(exc.value, "details")["nativeErrorId"] == "5"
 
 
 @pytest.mark.asyncio
