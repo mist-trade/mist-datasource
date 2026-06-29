@@ -520,6 +520,35 @@ async def test_subscription_callback_records_accepted_quote_diagnostics(caplog):
 
 
 @pytest.mark.asyncio
+async def test_subscription_callback_accepts_official_json_string_payload(caplog):
+    adapter = CallbackAdapter()
+    collector = CallbackCollector()
+    bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
+    client = TdxSubscriptionClient(
+        adapter=adapter,
+        bridge=bridge,
+        collector=collector,
+        max_subscriptions=100,
+    )
+
+    await client.subscribe(["600519.SH"])
+    assert adapter.callback is not None
+
+    with caplog.at_level(logging.INFO, logger="src.datasource.tdx_subscription"):
+        adapter.callback('{"Code":"SH600519","ErrorId":"0"}')
+
+    health = bridge.health()
+    assert collector.payloads == [{"Code": "SH600519", "ErrorId": "0"}]
+    assert health["quote_callback_count"] == 1
+    assert health["quote_callback_rejected_count"] == 0
+    assert health["last_quote_callback_code"] == "SH600519"
+    assert health["last_quote_callback_symbol"] == "600519.SH"
+    assert health["last_quote_callback_accepted"] is True
+    assert health["last_quote_callback_reject_reason"] is None
+    assert "TDX quote callback accepted" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_subscription_callback_records_inactive_quote_diagnostics(caplog):
     adapter = CallbackAdapter()
     collector = CallbackCollector()
@@ -576,6 +605,35 @@ async def test_subscription_callback_records_malformed_quote_diagnostics(caplog)
     assert health["last_quote_callback_accepted"] is False
     assert health["last_quote_callback_reject_reason"] == "missing_code"
     assert "reason=missing_code" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_subscription_callback_records_invalid_json_string_diagnostics(caplog):
+    adapter = CallbackAdapter()
+    collector = CallbackCollector()
+    bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
+    client = TdxSubscriptionClient(
+        adapter=adapter,
+        bridge=bridge,
+        collector=collector,
+        max_subscriptions=100,
+    )
+
+    await client.subscribe(["600519.SH"])
+    assert adapter.callback is not None
+
+    with caplog.at_level(logging.WARNING, logger="src.datasource.tdx_subscription"):
+        adapter.callback("not-json")
+
+    health = bridge.health()
+    assert collector.payloads == []
+    assert health["quote_callback_count"] == 1
+    assert health["quote_callback_rejected_count"] == 1
+    assert health["last_quote_callback_code"] is None
+    assert health["last_quote_callback_symbol"] is None
+    assert health["last_quote_callback_accepted"] is False
+    assert health["last_quote_callback_reject_reason"] == "invalid_payload"
+    assert "reason=invalid_payload" in caplog.text
 
 
 def test_subscription_client_has_no_synchronous_compatibility_callback_hook():

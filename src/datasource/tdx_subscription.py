@@ -1,6 +1,7 @@
 """Thin subscription wrapper around an initialized TDX adapter."""
 
 import asyncio
+import json
 from collections.abc import Iterable
 from contextlib import suppress
 from typing import Any
@@ -151,7 +152,22 @@ class TdxSubscriptionClient:
                 "error": None,
             }
 
-    def _on_quote_update(self, payload: dict[str, Any]) -> None:
+    def _on_quote_update(self, payload: Any) -> None:
+        parsed_payload = _parse_quote_payload(payload)
+        if parsed_payload is None:
+            self.bridge.record_quote_callback(
+                code=None,
+                normalized_symbol=None,
+                accepted=False,
+                reject_reason="invalid_payload",
+            )
+            logger.warning(
+                "TDX quote callback rejected reason=invalid_payload payload_type=%s",
+                type(payload).__name__,
+            )
+            return
+
+        payload = parsed_payload
         code = payload.get("Code")
         if not isinstance(code, str) or not code:
             self.bridge.record_quote_callback(
@@ -223,6 +239,26 @@ def _dedupe_normalized(symbols: Iterable[str]) -> list[str]:
             seen.add(normalized)
             result.append(normalized)
     return result
+
+
+def _parse_quote_payload(payload: Any) -> dict[str, Any] | None:
+    if isinstance(payload, dict):
+        return payload
+
+    if isinstance(payload, bytes | bytearray):
+        try:
+            payload = payload.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+
+    if isinstance(payload, str):
+        try:
+            decoded = json.loads(payload)
+        except json.JSONDecodeError:
+            return None
+        return decoded if isinstance(decoded, dict) else None
+
+    return None
 
 
 def _limit_error(max_subscriptions: int) -> dict[str, Any]:
