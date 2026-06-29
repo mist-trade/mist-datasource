@@ -3,10 +3,10 @@
 为 NestJS 后端提供实时行情推送的 WebSocket 接口.
 对应 TDX SDK: tqcenter.tq (subscribe_hq, unsubscribe_hq)
 
-使用 TDX 订阅客户端 + 分钟线采集模式:
+使用 TDX 订阅客户端 + 快照采集模式:
     1. TdxSubscriptionClient 包装 subscribe_hq/unsubscribe_hq
     2. SDK 回调只标记 collector dirty symbols
-    3. collector 拉取分钟线后广播 normalized bar 事件
+    3. collector 拉取 get_market_snapshot 后广播 quote 事件
 
 消息协议:
     客户端发送:
@@ -64,9 +64,7 @@ def _get_bridge() -> TdxBridge:
 
 def _message_symbols(message: dict[str, Any]) -> list[str] | None:
     symbols = message.get("symbols", message.get("stocks", []))
-    if not isinstance(symbols, list) or not all(
-        isinstance(symbol, str) for symbol in symbols
-    ):
+    if not isinstance(symbols, list) or not all(isinstance(symbol, str) for symbol in symbols):
         return None
     return symbols
 
@@ -102,7 +100,7 @@ async def websocket_quote(websocket: WebSocket, client_id: str):
     2. 验证股票数量不超过100只 (TDX SDK限制)
     3. 调用 subscription client 注册轻量回调
     4. 回调只标记 dirty symbol
-    5. collector 拉取分钟线并广播 normalized bar
+    5. collector 拉取 snapshot 并广播 quote
 
     对应 TDX SDK:
         - tq.subscribe_hq(stock_list, callback) - 注册订阅回调
@@ -231,9 +229,7 @@ async def websocket_quote(websocket: WebSocket, client_id: str):
                         )
                         continue
 
-                    response_type = (
-                        "unsubscribed" if msg_type == "unsubscribe" else "subscribed"
-                    )
+                    response_type = "unsubscribed" if msg_type == "unsubscribe" else "subscribed"
                     await websocket.send_text(
                         json.dumps(
                             _subscription_response(

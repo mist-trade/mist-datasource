@@ -360,8 +360,8 @@ TDX/Backend 的 WinSW 部署。
 ```powershell
 .\scripts\run-runtime-checks.ps1 -ApplianceRoot F:\quant\MistAPI
 
-# 交易时间强制等待实时 bar；这会改 TDX 订阅，只在 backend 未占用 leader 时使用
-.\scripts\run-runtime-checks.ps1 -ApplianceRoot F:\quant\MistAPI -RequireLiveBar -AllowWebSocketSubscriptionChange
+# 交易时间强制等待实时 quote；这会改 TDX 订阅，只在 backend 未占用 leader 时使用
+.\scripts\run-runtime-checks.ps1 -ApplianceRoot F:\quant\MistAPI -RequireLiveQuote -AllowWebSocketSubscriptionChange
 
 # 加测 Phase 3 财务/报告链路；默认用 get_gp_one_data，适合非交易时段
 .\scripts\run-runtime-checks.ps1 -ApplianceRoot F:\quant\MistAPI -IncludeFinanceReportSmoke

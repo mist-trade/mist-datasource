@@ -166,7 +166,8 @@ Assert-Match "runtime checks use TDX HTTP dotted symbol default" $runtimeChecks 
 Assert-Match "runtime checks use TDX sector block default" $runtimeChecks '[string]$Sector = "通达信88"'
 Assert-Match "runtime checks preserve dotted symbols for TDX HTTP" $runtimeChecks "ConvertTo-TdxHttpSymbol"
 Assert-Match "runtime checks can explicitly allow websocket subscription changes" $runtimeChecks "AllowWebSocketSubscriptionChange"
-Assert-Match "runtime checks support optional live bar wait" $runtimeChecks "RequireLiveBar"
+Assert-Match "runtime checks support optional live quote wait" $runtimeChecks "RequireLiveQuote"
+Assert-Match "runtime checks verify live quote snapshot payload" $runtimeChecks '$message.data.snapshot'
 Assert-Match "runtime checks unsubscribe after websocket smoke" $runtimeChecks '"type" = "unsubscribe"'
 if ($runtimeChecks -match [regex]::Escape('MistQMT')) {
     throw "runtime checks must not require a QMT service until QMT SDK/login are finalized."

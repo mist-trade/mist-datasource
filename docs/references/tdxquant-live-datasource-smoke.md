@@ -240,8 +240,9 @@ Official sample response:
 ```
 
 Repository design rule: keep the callback thin. It should parse the updated
-symbol, mark it dirty, and return quickly. Minute-bar fetching and retries
-belong in the collector path.
+symbol, mark it dirty, and return quickly. The collector must fetch
+`get_market_snapshot` and broadcast a `quote` event; `get_market_data` remains a
+historical bar API and is not used as subscription fallback.
 
 ## `unsubscribe_hq`
 
@@ -405,12 +406,12 @@ Live mode is trading-time sensitive:
 ```
 
 4. Expect a `subscribed` response with accepted symbols.
-5. Optionally wait for a normalized `bar` event.
+5. Optionally wait for a normalized `quote` event with a `snapshot` payload.
 6. Send `unsubscribe` before exit.
 
-The `bar` event wait should be optional by default and mandatory only when the
-runner passes a flag such as `--require-live-bar`, because live callback timing
-depends on market hours and TDX terminal state.
+The `quote` event wait should be optional by default and mandatory only when the
+runner passes a flag such as `--require-live-quote`, because live callback
+timing depends on market hours and TDX terminal state.
 
 ## Suggested Script Names
 
@@ -436,5 +437,5 @@ Example commands:
 .\scripts\smoke\test-tdx-live-datasource.ps1 `
   -BaseUrl http://127.0.0.1:9001 `
   -Symbol 688318.SH `
-  -RequireLiveBar
+  -RequireLiveQuote
 ```

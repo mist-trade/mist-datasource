@@ -23,7 +23,7 @@ param(
     [string]$Period = "1d",
     [int]$Count = 2,
     [int]$TimeoutSeconds = 20,
-    [int]$LiveBarTimeoutSeconds = 60,
+    [int]$LiveQuoteTimeoutSeconds = 60,
     [string]$TdxServiceName = "mist-tdx-datasource",
     [switch]$RunDatasourceInstall,
     [switch]$RunDatasourceStartupTest,
@@ -38,7 +38,7 @@ param(
     [switch]$IncludeReferenceInstrumentSmoke,
     [switch]$IncludeFinanceReportSmoke,
     [switch]$IncludeFormulaSmoke,
-    [switch]$RequireLiveBar,
+    [switch]$RequireLiveQuote,
     [switch]$AllowWebSocketSubscriptionChange,
     [switch]$AllowTdxHttpUnavailable
 )
@@ -823,9 +823,9 @@ function Test-WebSocketSmoke {
             throw "Expected WebSocket pong message, got: $($pong | ConvertTo-Json -Compress -Depth 8)"
         }
 
-        if ($RequireLiveBar) {
+        if ($RequireLiveQuote) {
             if (-not $AllowWebSocketSubscriptionChange) {
-                throw "RequireLiveBar needs -AllowWebSocketSubscriptionChange because it changes TDX subscriptions. Do not use it while Mist backend owns the TDX subscription leader."
+                throw "RequireLiveQuote needs -AllowWebSocketSubscriptionChange because it changes TDX subscriptions. Do not use it while Mist backend owns the TDX subscription leader."
             }
 
             Send-WebSocketJson -Socket $socket -Payload @{
@@ -838,18 +838,22 @@ function Test-WebSocketSmoke {
                 throw "Expected WebSocket subscribed message, got: $($subscribed | ConvertTo-Json -Compress -Depth 8)"
             }
 
-            $deadline = (Get-Date).AddSeconds($LiveBarTimeoutSeconds)
-            $barSeen = $false
+            $deadline = (Get-Date).AddSeconds($LiveQuoteTimeoutSeconds)
+            $quoteSeen = $false
             while ((Get-Date) -lt $deadline) {
                 $remaining = [Math]::Max(1, [int]($deadline - (Get-Date)).TotalSeconds)
                 $message = Receive-WebSocketText -Socket $socket -TimeoutSeconds $remaining | ConvertFrom-Json
-                if ($message.type -eq "bar") {
-                    $barSeen = $true
+                if ($message.type -eq "quote") {
+                    Assert-PropertyExists -Object $message -Name "data"
+                    Assert-PropertyExists -Object $message.data -Name "snapshot"
+                    Assert-PropertyExists -Object $message.data.snapshot -Name "Code"
+                    Assert-PropertyExists -Object $message.data.snapshot -Name "Now"
+                    $quoteSeen = $true
                     break
                 }
             }
-            if (-not $barSeen) {
-                throw "No live bar event arrived within $LiveBarTimeoutSeconds seconds."
+            if (-not $quoteSeen) {
+                throw "No live quote event arrived within $LiveQuoteTimeoutSeconds seconds."
             }
 
             Send-WebSocketJson -Socket $socket -Payload @{
