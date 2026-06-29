@@ -32,7 +32,9 @@ class FakeTdxProvider:
         self.stock_trade_aggregate_queries: list[tuple[list[str], list[str], str, str]] = []
         self.stock_trade_aggregate_by_date_queries: list[tuple[list[str], list[str], int, int]] = []
         self.sector_trade_aggregate_queries: list[tuple[list[str], list[str], str, str]] = []
-        self.sector_trade_aggregate_by_date_queries: list[tuple[list[str], list[str], int, int]] = []
+        self.sector_trade_aggregate_by_date_queries: list[
+            tuple[list[str], list[str], int, int]
+        ] = []
         self.market_trade_aggregate_queries: list[tuple[list[str], str, str]] = []
         self.market_trade_aggregate_by_date_queries: list[tuple[list[str], int, int]] = []
         self.formula_format_queries: list[dict[str, Any]] = []
@@ -951,9 +953,7 @@ async def test_raw_call_proxies_method_and_params(v1_client: AsyncClient) -> Non
         "method": "get_market_data",
         "params": {"stock_list": ["SH600519"]},
     }
-    assert tdx.main.tdx_provider.raw_calls == [
-        ("get_market_data", {"stock_list": ["SH600519"]})
-    ]
+    assert tdx.main.tdx_provider.raw_calls == [("get_market_data", {"stock_list": ["SH600519"]})]
 
 
 @pytest.mark.asyncio
@@ -1040,9 +1040,7 @@ async def test_price_volume_query_returns_normalized_items(v1_client: AsyncClien
     body = response.json()
     assert body["ok"] is True
     assert body["data"]["items"][0]["price"] == 1168.63
-    assert tdx.main.tdx_provider.price_volume_queries == [
-        (["600519.SH"], ["price", "volume"])
-    ]
+    assert tdx.main.tdx_provider.price_volume_queries == [(["600519.SH"], ["price", "volume"])]
 
 
 @pytest.mark.asyncio
@@ -1092,9 +1090,7 @@ async def test_reference_share_capital_query_uses_date_list(v1_client: AsyncClie
     body = response.json()
     assert body["ok"] is True
     assert body["data"]["items"][0]["totalShareCapital"] == 182942480.0
-    assert tdx.main.tdx_provider.share_capital_queries == [
-        ("600519.SH", ["20250101"], 1)
-    ]
+    assert tdx.main.tdx_provider.share_capital_queries == [("600519.SH", ["20250101"], 1)]
 
 
 @pytest.mark.asyncio
@@ -1128,9 +1124,7 @@ async def test_reference_dividend_factors_query_returns_normalized_items(
     body = response.json()
     assert body["ok"] is True
     assert body["data"]["items"][0]["bonus"] == 1.23
-    assert tdx.main.tdx_provider.dividend_factor_queries == [
-        ("600519.SH", "20250101", "20251231")
-    ]
+    assert tdx.main.tdx_provider.dividend_factor_queries == [("600519.SH", "20250101", "20251231")]
 
 
 @pytest.mark.asyncio
@@ -1238,9 +1232,7 @@ async def test_single_finance_data_query_returns_normalized_items(
     assert body["ok"] is True
     assert body["data"]["items"][0]["field"] == "GO1"
     assert body["data"]["items"][0]["value"] == 107.41
-    assert tdx.main.tdx_provider.single_finance_value_queries == [
-        (["688318.SH"], ["GO1"])
-    ]
+    assert tdx.main.tdx_provider.single_finance_value_queries == [(["688318.SH"], ["GO1"])]
 
 
 @pytest.mark.asyncio
@@ -1359,9 +1351,7 @@ async def test_market_trade_aggregate_by_date_query_returns_normalized_items(
 
     assert response.status_code == 200
     assert response.json()["data"]["items"][0]["values"] == [0.0, 181415.13]
-    assert tdx.main.tdx_provider.market_trade_aggregate_by_date_queries == [
-        (["SC10"], 0, 0)
-    ]
+    assert tdx.main.tdx_provider.market_trade_aggregate_by_date_queries == [(["SC10"], 0, 0)]
 
 
 @pytest.mark.asyncio
@@ -1640,7 +1630,15 @@ async def test_health_includes_enriched_tdx_state(v1_client: AsyncClient) -> Non
     assert body["tqInitialized"] is False
     assert body["wsConnected"] is False
     assert body["subscribedCount"] == 0
+    assert body["activeSubscriptions"] == []
     assert body["lastCallbackAt"] is None
+    assert body["quoteCallbackCount"] == 0
+    assert body["quoteCallbackRejectedCount"] == 0
+    assert body["lastQuoteCallbackAt"] is None
+    assert body["lastQuoteCallbackCode"] is None
+    assert body["lastQuoteCallbackSymbol"] is None
+    assert body["lastQuoteCallbackAccepted"] is None
+    assert body["lastQuoteCallbackRejectReason"] is None
     assert body["lastMinuteBarAt"] is None
     assert body["eventQueueDepth"] == 0
     assert body["eventQueueCapacity"] == 0

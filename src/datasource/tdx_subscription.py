@@ -6,10 +6,12 @@ from contextlib import suppress
 from typing import Any
 
 from src.core.config import settings
+from src.core.logging import get_logger
 from src.datasource.tdx_bridge import TdxBridge
 from src.datasource.tdx_normalization import normalize_symbol
 
 TDX_SUBSCRIBE_LIMIT_EXCEEDED = "TDX_SUBSCRIBE_LIMIT_EXCEEDED"
+logger = get_logger(__name__)
 
 
 class TdxSubscriptionClient:
@@ -152,11 +154,64 @@ class TdxSubscriptionClient:
     def _on_quote_update(self, payload: dict[str, Any]) -> None:
         code = payload.get("Code")
         if not isinstance(code, str) or not code:
+            self.bridge.record_quote_callback(
+                code=None,
+                normalized_symbol=None,
+                accepted=False,
+                reject_reason="missing_code",
+            )
+            logger.warning(
+                "TDX quote callback rejected reason=missing_code payload_keys=%s",
+                sorted(payload.keys()),
+            )
             return
-        if normalize_symbol(code) not in set(self.bridge.active_subscriptions):
+        normalized_symbol = normalize_symbol(code)
+        active_subscriptions = set(self.bridge.active_subscriptions)
+        if normalized_symbol not in active_subscriptions:
+            self.bridge.record_quote_callback(
+                code=code,
+                normalized_symbol=normalized_symbol,
+                accepted=False,
+                reject_reason="inactive_subscription",
+            )
+            logger.warning(
+                "TDX quote callback rejected reason=inactive_subscription "
+                "code=%s symbol=%s active=%s error_id=%s",
+                code,
+                normalized_symbol,
+                sorted(active_subscriptions),
+                payload.get("ErrorId"),
+            )
             return
-        if self.collector is not None:
-            self.collector.mark_dirty_from_callback(payload)
+        if self.collector is None:
+            self.bridge.record_quote_callback(
+                code=code,
+                normalized_symbol=normalized_symbol,
+                accepted=False,
+                reject_reason="collector_unavailable",
+            )
+            logger.warning(
+                "TDX quote callback rejected reason=collector_unavailable "
+                "code=%s symbol=%s error_id=%s",
+                code,
+                normalized_symbol,
+                payload.get("ErrorId"),
+            )
+            return
+
+        self.bridge.record_quote_callback(
+            code=code,
+            normalized_symbol=normalized_symbol,
+            accepted=True,
+            reject_reason=None,
+        )
+        logger.info(
+            "TDX quote callback accepted code=%s symbol=%s error_id=%s",
+            code,
+            normalized_symbol,
+            payload.get("ErrorId"),
+        )
+        self.collector.mark_dirty_from_callback(payload)
 
 
 def _dedupe_normalized(symbols: Iterable[str]) -> list[str]:

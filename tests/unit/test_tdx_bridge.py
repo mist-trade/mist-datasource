@@ -74,6 +74,47 @@ def test_bridge_records_runtime_callback_and_queue_state():
     assert health["event_queue_depth"] == 3
 
 
+def test_bridge_records_raw_quote_callback_diagnostics():
+    bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
+    bridge.mark_active(["600519.SH"])
+
+    bridge.record_quote_callback(
+        code="SH600519",
+        normalized_symbol="600519.SH",
+        accepted=True,
+        reject_reason=None,
+    )
+
+    health = bridge.health()
+    assert health["active_subscriptions"] == ["600519.SH"]
+    assert health["quote_callback_count"] == 1
+    assert health["quote_callback_rejected_count"] == 0
+    assert health["last_quote_callback_at"] is not None
+    assert health["last_quote_callback_code"] == "SH600519"
+    assert health["last_quote_callback_symbol"] == "600519.SH"
+    assert health["last_quote_callback_accepted"] is True
+    assert health["last_quote_callback_reject_reason"] is None
+
+
+def test_bridge_records_rejected_quote_callback_diagnostics():
+    bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
+
+    bridge.record_quote_callback(
+        code="SZ000001",
+        normalized_symbol="000001.SZ",
+        accepted=False,
+        reject_reason="inactive_subscription",
+    )
+
+    health = bridge.health()
+    assert health["quote_callback_count"] == 1
+    assert health["quote_callback_rejected_count"] == 1
+    assert health["last_quote_callback_code"] == "SZ000001"
+    assert health["last_quote_callback_symbol"] == "000001.SZ"
+    assert health["last_quote_callback_accepted"] is False
+    assert health["last_quote_callback_reject_reason"] == "inactive_subscription"
+
+
 def test_bridge_reports_route_backpressure_without_enqueueing_bar():
     bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
 

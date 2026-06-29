@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import logging
 from typing import Any
 
 import pytest
@@ -426,9 +427,7 @@ async def test_collector_records_publish_error_without_reemitting_duplicate():
     assert emitted == 1
     assert emitted_again == 0
     assert publish_calls == ["600519.SH"]
-    assert collector.emitted_bar_keys == {
-        ("600519.SH", "1m", "2026-06-26T09:31:00+08:00", "tdx")
-    }
+    assert collector.emitted_bar_keys == {("600519.SH", "1m", "2026-06-26T09:31:00+08:00", "tdx")}
     assert collector.state == "error"
     assert collector.last_error_code == "TDX_COLLECTOR_PUBLISH_ERROR"
 
@@ -489,6 +488,94 @@ async def test_subscription_callback_marks_dirty_without_collecting_bars():
 
     assert collector.payloads == [{"Code": "SH600519", "ErrorId": "0"}]
     assert adapter.snapshot_calls == []
+
+
+@pytest.mark.asyncio
+async def test_subscription_callback_records_accepted_quote_diagnostics(caplog):
+    adapter = CallbackAdapter()
+    collector = CallbackCollector()
+    bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
+    client = TdxSubscriptionClient(
+        adapter=adapter,
+        bridge=bridge,
+        collector=collector,
+        max_subscriptions=100,
+    )
+
+    await client.subscribe(["600519.SH"])
+    assert adapter.callback is not None
+
+    with caplog.at_level(logging.INFO, logger="src.datasource.tdx_subscription"):
+        adapter.callback({"Code": "SH600519", "ErrorId": "0"})
+
+    health = bridge.health()
+    assert health["quote_callback_count"] == 1
+    assert health["quote_callback_rejected_count"] == 0
+    assert health["last_quote_callback_code"] == "SH600519"
+    assert health["last_quote_callback_symbol"] == "600519.SH"
+    assert health["last_quote_callback_accepted"] is True
+    assert health["last_quote_callback_reject_reason"] is None
+    assert "TDX quote callback accepted" in caplog.text
+    assert "symbol=600519.SH" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_subscription_callback_records_inactive_quote_diagnostics(caplog):
+    adapter = CallbackAdapter()
+    collector = CallbackCollector()
+    bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
+    client = TdxSubscriptionClient(
+        adapter=adapter,
+        bridge=bridge,
+        collector=collector,
+        max_subscriptions=100,
+    )
+
+    await client.subscribe(["600519.SH"])
+    assert adapter.callback is not None
+
+    with caplog.at_level(logging.WARNING, logger="src.datasource.tdx_subscription"):
+        adapter.callback({"Code": "SZ000001", "ErrorId": "0"})
+
+    health = bridge.health()
+    assert collector.payloads == []
+    assert health["quote_callback_count"] == 1
+    assert health["quote_callback_rejected_count"] == 1
+    assert health["last_quote_callback_code"] == "SZ000001"
+    assert health["last_quote_callback_symbol"] == "000001.SZ"
+    assert health["last_quote_callback_accepted"] is False
+    assert health["last_quote_callback_reject_reason"] == "inactive_subscription"
+    assert "TDX quote callback rejected" in caplog.text
+    assert "reason=inactive_subscription" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_subscription_callback_records_malformed_quote_diagnostics(caplog):
+    adapter = CallbackAdapter()
+    collector = CallbackCollector()
+    bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
+    client = TdxSubscriptionClient(
+        adapter=adapter,
+        bridge=bridge,
+        collector=collector,
+        max_subscriptions=100,
+    )
+
+    await client.subscribe(["600519.SH"])
+    assert adapter.callback is not None
+
+    with caplog.at_level(logging.WARNING, logger="src.datasource.tdx_subscription"):
+        adapter.callback({"ErrorId": "0"})
+
+    health = bridge.health()
+    assert collector.payloads == []
+    assert health["quote_callback_count"] == 1
+    assert health["quote_callback_rejected_count"] == 1
+    assert health["last_quote_callback_code"] is None
+    assert health["last_quote_callback_symbol"] is None
+    assert health["last_quote_callback_accepted"] is False
+    assert health["last_quote_callback_reject_reason"] == "missing_code"
+    assert "reason=missing_code" in caplog.text
 
 
 def test_subscription_client_has_no_synchronous_compatibility_callback_hook():

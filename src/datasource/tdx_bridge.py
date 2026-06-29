@@ -30,6 +30,13 @@ class TdxBridge:
         self.subscription_state_known = False
         self.last_callback_at: str | None = None
         self.last_minute_bar_at: str | None = None
+        self.last_quote_callback_at: str | None = None
+        self.last_quote_callback_code: str | None = None
+        self.last_quote_callback_symbol: str | None = None
+        self.last_quote_callback_accepted: bool | None = None
+        self.last_quote_callback_reject_reason: str | None = None
+        self.quote_callback_count = 0
+        self.quote_callback_rejected_count = 0
         self.event_queue_capacity = queue_max_size
         self.last_error_code: str | None = None
         self.dropped_event_count = 0
@@ -110,6 +117,23 @@ class TdxBridge:
         if last_minute_bar_at is not None:
             self.last_minute_bar_at = last_minute_bar_at
 
+    def record_quote_callback(
+        self,
+        *,
+        code: str | None,
+        normalized_symbol: str | None,
+        accepted: bool,
+        reject_reason: str | None,
+    ) -> None:
+        self.quote_callback_count += 1
+        if not accepted:
+            self.quote_callback_rejected_count += 1
+        self.last_quote_callback_at = _now_beijing()
+        self.last_quote_callback_code = code
+        self.last_quote_callback_symbol = normalized_symbol
+        self.last_quote_callback_accepted = accepted
+        self.last_quote_callback_reject_reason = reject_reason
+
     def record_queue_depth(self, depth: int) -> None:
         self._event_queue_depth = max(0, depth)
 
@@ -119,8 +143,16 @@ class TdxBridge:
     def health(self) -> dict[str, Any]:
         return {
             "subscribed_count": self.subscribed_count,
+            "active_subscriptions": list(self.active_subscriptions),
             "last_callback_at": self.last_callback_at,
             "last_minute_bar_at": self.last_minute_bar_at,
+            "quote_callback_count": self.quote_callback_count,
+            "quote_callback_rejected_count": self.quote_callback_rejected_count,
+            "last_quote_callback_at": self.last_quote_callback_at,
+            "last_quote_callback_code": self.last_quote_callback_code,
+            "last_quote_callback_symbol": self.last_quote_callback_symbol,
+            "last_quote_callback_accepted": self.last_quote_callback_accepted,
+            "last_quote_callback_reject_reason": self.last_quote_callback_reject_reason,
             "event_queue_depth": self.event_queue_depth,
             "event_queue_capacity": self.event_queue_capacity,
             "last_error_code": self.last_error_code,

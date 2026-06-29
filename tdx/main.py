@@ -194,7 +194,15 @@ async def health():
         "tqInitialized": tdx_adapter is not None,
         "wsConnected": ws_manager.connection_count > 0,
         "subscribedCount": bridge_health["subscribedCount"],
+        "activeSubscriptions": bridge_health["activeSubscriptions"],
         "lastCallbackAt": bridge_health["lastCallbackAt"],
+        "quoteCallbackCount": bridge_health["quoteCallbackCount"],
+        "quoteCallbackRejectedCount": bridge_health["quoteCallbackRejectedCount"],
+        "lastQuoteCallbackAt": bridge_health["lastQuoteCallbackAt"],
+        "lastQuoteCallbackCode": bridge_health["lastQuoteCallbackCode"],
+        "lastQuoteCallbackSymbol": bridge_health["lastQuoteCallbackSymbol"],
+        "lastQuoteCallbackAccepted": bridge_health["lastQuoteCallbackAccepted"],
+        "lastQuoteCallbackRejectReason": bridge_health["lastQuoteCallbackRejectReason"],
         "lastMinuteBarAt": _prefer_collector_value(
             collector_health["lastMinuteBarAt"],
             bridge_health["lastMinuteBarAt"],
@@ -230,8 +238,16 @@ def _tdx_bridge_health() -> dict[str, Any]:
     if tdx_bridge is None:
         return {
             "subscribedCount": 0,
+            "activeSubscriptions": [],
             "lastCallbackAt": None,
             "lastMinuteBarAt": None,
+            "quoteCallbackCount": 0,
+            "quoteCallbackRejectedCount": 0,
+            "lastQuoteCallbackAt": None,
+            "lastQuoteCallbackCode": None,
+            "lastQuoteCallbackSymbol": None,
+            "lastQuoteCallbackAccepted": None,
+            "lastQuoteCallbackRejectReason": None,
             "eventQueueDepth": 0,
             "eventQueueCapacity": 0,
         }
@@ -241,18 +257,61 @@ def _tdx_bridge_health() -> dict[str, Any]:
         if isinstance(health_status, Mapping):
             return {
                 "subscribedCount": _read_mapping_int(health_status, "subscribed_count", 0),
+                "activeSubscriptions": _read_mapping_list(
+                    health_status,
+                    "active_subscriptions",
+                ),
                 "lastCallbackAt": health_status.get("last_callback_at"),
                 "lastMinuteBarAt": health_status.get("last_minute_bar_at"),
-                "eventQueueDepth": _read_mapping_int(health_status, "event_queue_depth", 0),
-                "eventQueueCapacity": _read_mapping_int(
-                    health_status, "event_queue_capacity", 0
+                "quoteCallbackCount": _read_mapping_int(
+                    health_status,
+                    "quote_callback_count",
+                    0,
                 ),
+                "quoteCallbackRejectedCount": _read_mapping_int(
+                    health_status,
+                    "quote_callback_rejected_count",
+                    0,
+                ),
+                "lastQuoteCallbackAt": health_status.get("last_quote_callback_at"),
+                "lastQuoteCallbackCode": health_status.get("last_quote_callback_code"),
+                "lastQuoteCallbackSymbol": health_status.get("last_quote_callback_symbol"),
+                "lastQuoteCallbackAccepted": health_status.get("last_quote_callback_accepted"),
+                "lastQuoteCallbackRejectReason": health_status.get(
+                    "last_quote_callback_reject_reason"
+                ),
+                "eventQueueDepth": _read_mapping_int(health_status, "event_queue_depth", 0),
+                "eventQueueCapacity": _read_mapping_int(health_status, "event_queue_capacity", 0),
             }
 
     return {
         "subscribedCount": _read_int(tdx_bridge, "subscribed_count", 0),
+        "activeSubscriptions": _read_list(tdx_bridge, "active_subscriptions"),
         "lastCallbackAt": _read_attr(tdx_bridge, "last_callback_at", None),
         "lastMinuteBarAt": _read_attr(tdx_bridge, "last_minute_bar_at", None),
+        "quoteCallbackCount": _read_int(tdx_bridge, "quote_callback_count", 0),
+        "quoteCallbackRejectedCount": _read_int(
+            tdx_bridge,
+            "quote_callback_rejected_count",
+            0,
+        ),
+        "lastQuoteCallbackAt": _read_attr(tdx_bridge, "last_quote_callback_at", None),
+        "lastQuoteCallbackCode": _read_attr(tdx_bridge, "last_quote_callback_code", None),
+        "lastQuoteCallbackSymbol": _read_attr(
+            tdx_bridge,
+            "last_quote_callback_symbol",
+            None,
+        ),
+        "lastQuoteCallbackAccepted": _read_attr(
+            tdx_bridge,
+            "last_quote_callback_accepted",
+            None,
+        ),
+        "lastQuoteCallbackRejectReason": _read_attr(
+            tdx_bridge,
+            "last_quote_callback_reject_reason",
+            None,
+        ),
         "eventQueueDepth": _read_int(tdx_bridge, "event_queue_depth", 0),
         "eventQueueCapacity": _read_int(tdx_bridge, "event_queue_capacity", 0),
     }
@@ -290,9 +349,19 @@ def _read_int(source: Any | None, name: str, default: int) -> int:
     return value if isinstance(value, int) else default
 
 
+def _read_list(source: Any | None, name: str) -> list[Any]:
+    value = _read_attr(source, name, [])
+    return list(value) if isinstance(value, list | tuple) else []
+
+
 def _read_mapping_int(source: Mapping[str, Any], name: str, default: int) -> int:
     value = source.get(name, default)
     return value if isinstance(value, int) else default
+
+
+def _read_mapping_list(source: Mapping[str, Any], name: str) -> list[Any]:
+    value = source.get(name, [])
+    return list(value) if isinstance(value, list | tuple) else []
 
 
 async def _publish_collector_bar(bar: TdxBar) -> None:
