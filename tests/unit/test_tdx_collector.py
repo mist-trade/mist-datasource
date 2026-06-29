@@ -8,13 +8,41 @@ import pytest
 from src.adapter.mock.tdx_mock import TDXMockAdapter
 from src.datasource.tdx_bridge import TdxBridge
 from src.datasource.tdx_collector import TdxMinuteCollector
-from src.datasource.tdx_models import TdxBar
+from src.datasource.tdx_models import TdxBar, TdxSnapshot
 from src.datasource.tdx_subscription import TdxSubscriptionClient
 from tdx.main import app
 
 
 class FakeProvider:
+    def __init__(self) -> None:
+        self.snapshot_calls: list[list[str]] = []
+        self.bar_calls: list[tuple[list[str], str, int]] = []
+
+    async def get_snapshots(
+        self,
+        symbols: list[str],
+        fields: list[str] | None = None,
+    ) -> list[TdxSnapshot]:
+        _ = fields
+        self.snapshot_calls.append(list(symbols))
+        return [
+            TdxSnapshot(
+                symbol=symbol,
+                last=10.25,
+                open=10.0,
+                high=10.5,
+                low=9.9,
+                lastClose=9.95,
+                volume=1500,
+                amount=15375.0,
+                provider="tdx",
+                asOf="2026-06-29T14:55:01+08:00",
+            )
+            for symbol in symbols
+        ]
+
     async def collect_recent_bars(self, symbols, period, count):
+        self.bar_calls.append((list(symbols), period, count))
         _ = count
         return [
             {
@@ -34,7 +62,44 @@ class FakeProvider:
         ]
 
 
+class SnapshotProvider(FakeProvider):
+    pass
+
+
 class MixedProvider:
+    async def get_snapshots(
+        self,
+        symbols: list[str],
+        fields: list[str] | None = None,
+    ) -> list[TdxSnapshot | dict[str, Any]]:
+        _ = fields
+        return [
+            TdxSnapshot(
+                symbol=symbols[0],
+                last=10.25,
+                open=10.0,
+                high=10.5,
+                low=9.9,
+                lastClose=9.95,
+                volume=1500,
+                amount=15375.0,
+                provider="tdx",
+                asOf="2026-06-29T14:55:01+08:00",
+            ),
+            {
+                "symbol": symbols[0],
+                "last": 10.3,
+                "open": 10.0,
+                "high": 10.5,
+                "low": 9.9,
+                "lastClose": 9.95,
+                "volume": 1600,
+                "amount": 16480.0,
+                "provider": "tdx",
+                "asOf": "2026-06-29T14:55:02+08:00",
+            },
+        ]
+
     async def collect_recent_bars(self, symbols, period, count):
         _ = count
         return [
@@ -69,7 +134,30 @@ class MixedProvider:
 
 class MultiSymbolProvider:
     def __init__(self) -> None:
-        self.calls: list[tuple[list[str], str, int]] = []
+        self.calls: list[list[str]] = []
+
+    async def get_snapshots(
+        self,
+        symbols: list[str],
+        fields: list[str] | None = None,
+    ) -> list[TdxSnapshot]:
+        _ = fields
+        self.calls.append(list(symbols))
+        return [
+            TdxSnapshot(
+                symbol=symbol,
+                last=10.2 + index,
+                open=10.0 + index,
+                high=10.5 + index,
+                low=9.9 + index,
+                lastClose=9.95 + index,
+                volume=1500 + index,
+                amount=15375.0 + index,
+                provider="tdx",
+                asOf=f"2026-06-29T14:5{index}:01+08:00",
+            )
+            for index, symbol in enumerate(symbols, start=1)
+        ]
 
     async def collect_recent_bars(self, symbols, period, count):
         self.calls.append((list(symbols), period, count))
@@ -93,7 +181,16 @@ class MultiSymbolProvider:
 
 class CountingProvider(FakeProvider):
     def __init__(self) -> None:
-        self.calls: list[tuple[list[str], str, int]] = []
+        super().__init__()
+        self.calls: list[list[str]] = []
+
+    async def get_snapshots(
+        self,
+        symbols: list[str],
+        fields: list[str] | None = None,
+    ) -> list[TdxSnapshot]:
+        self.calls.append(list(symbols))
+        return await super().get_snapshots(symbols, fields)
 
     async def collect_recent_bars(self, symbols, period, count):
         self.calls.append((list(symbols), period, count))
@@ -147,12 +244,28 @@ class DuplicateProvider:
 
 
 class EmptyProvider:
+    async def get_snapshots(
+        self,
+        symbols: list[str],
+        fields: list[str] | None = None,
+    ) -> list[TdxSnapshot]:
+        _ = (symbols, fields)
+        return []
+
     async def collect_recent_bars(self, symbols, period, count):
         _ = (symbols, period, count)
         return []
 
 
 class RaisingProvider:
+    async def get_snapshots(
+        self,
+        symbols: list[str],
+        fields: list[str] | None = None,
+    ) -> list[TdxSnapshot]:
+        _ = (symbols, fields)
+        raise RuntimeError("tdx snapshot failed")
+
     async def collect_recent_bars(self, symbols, period, count):
         _ = (symbols, period, count)
         raise RuntimeError("tdx http failed")
@@ -291,9 +404,10 @@ async def test_callback_only_marks_dirty_symbol():
 
 
 @pytest.mark.asyncio
-async def test_collector_emits_bar_once_per_key():
+async def test_collector_collects_dirty_snapshot_once():
     bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
-    collector = TdxMinuteCollector(provider=FakeProvider(), bridge=bridge, period="1m")
+    provider = FakeProvider()
+    collector = TdxMinuteCollector(provider=provider, bridge=bridge, period="1m")
     collector.mark_dirty("600519.SH")
 
     emitted = await collector.collect_dirty_once()
@@ -301,22 +415,25 @@ async def test_collector_emits_bar_once_per_key():
 
     assert emitted == 1
     assert emitted_again == 0
-    assert bridge.event_queue_depth == 1
+    assert provider.snapshot_calls == [["600519.SH"]]
+    assert provider.bar_calls == []
+    assert bridge.event_queue_depth == 0
+    assert bridge.last_callback_at is not None
 
 
 @pytest.mark.asyncio
-async def test_collector_publishes_new_normalized_bars():
+async def test_collector_publishes_new_normalized_snapshot():
     bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
-    published: list[TdxBar] = []
+    published: list[TdxSnapshot] = []
 
-    async def publish_bar(bar: TdxBar) -> None:
-        published.append(bar)
+    async def publish_snapshot(snapshot: TdxSnapshot) -> None:
+        published.append(snapshot)
 
     collector = TdxMinuteCollector(
         provider=FakeProvider(),
         bridge=bridge,
         period="1m",
-        bar_publisher=publish_bar,
+        snapshot_publisher=publish_snapshot,
     )
     collector.mark_dirty("SH600519")
 
@@ -325,33 +442,58 @@ async def test_collector_publishes_new_normalized_bars():
     assert emitted == 1
     assert published[0].model_dump(by_alias=True) == {
         "symbol": "600519.SH",
-        "period": "1m",
-        "barTime": "2026-06-26T09:31:00+08:00",
-        "open": 10.1,
-        "high": 10.3,
-        "low": 10.0,
-        "close": 10.2,
-        "volume": 1200.0,
-        "amount": 12345.6,
+        "last": 10.25,
+        "open": 10.0,
+        "high": 10.5,
+        "low": 9.9,
+        "lastClose": 9.95,
+        "volume": 1500.0,
+        "amount": 15375.0,
         "provider": "tdx",
-        "receivedAt": "2026-06-26T09:31:02+08:00",
+        "asOf": "2026-06-29T14:55:01+08:00",
     }
 
 
 @pytest.mark.asyncio
-async def test_collector_publishes_all_unique_bars_when_bridge_buffer_rolls_over():
-    bridge = TdxBridge(queue_max_size=1, max_subscriptions=100)
-    provider = MultiSymbolProvider()
-    published: list[TdxBar] = []
+async def test_collector_publishes_snapshot_without_fetching_cached_bars():
+    bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
+    provider = SnapshotProvider()
+    published: list[str] = []
 
-    async def publish_bar(bar: TdxBar) -> None:
-        published.append(bar)
+    async def publish_snapshot(snapshot: TdxSnapshot) -> None:
+        published.append(snapshot.symbol)
 
     collector = TdxMinuteCollector(
         provider=provider,
         bridge=bridge,
         period="1m",
-        bar_publisher=publish_bar,
+        snapshot_publisher=publish_snapshot,
+    )
+    collector.mark_dirty("SH600519")
+
+    emitted = await collector.collect_dirty_once()
+
+    assert emitted == 1
+    assert provider.snapshot_calls == [["600519.SH"]]
+    assert provider.bar_calls == []
+    assert published == ["600519.SH"]
+    assert bridge.event_queue_depth == 0
+
+
+@pytest.mark.asyncio
+async def test_collector_publishes_all_dirty_snapshots_without_bar_backpressure():
+    bridge = TdxBridge(queue_max_size=1, max_subscriptions=100)
+    provider = MultiSymbolProvider()
+    published: list[TdxSnapshot] = []
+
+    async def publish_snapshot(snapshot: TdxSnapshot) -> None:
+        published.append(snapshot)
+
+    collector = TdxMinuteCollector(
+        provider=provider,
+        bridge=bridge,
+        period="1m",
+        snapshot_publisher=publish_snapshot,
     )
     collector.mark_dirty("600519.SH")
     collector.mark_dirty("000001.SZ")
@@ -359,9 +501,9 @@ async def test_collector_publishes_all_unique_bars_when_bridge_buffer_rolls_over
     emitted = await collector.collect_dirty_once()
 
     assert emitted == 2
-    assert [bar.symbol for bar in published] == ["000001.SZ", "600519.SH"]
-    assert bridge.event_queue_depth == 1
-    assert bridge.last_error_code == "DATASOURCE_WS_BACKPRESSURE"
+    assert [snapshot.symbol for snapshot in published] == ["000001.SZ", "600519.SH"]
+    assert bridge.event_queue_depth == 0
+    assert bridge.last_error_code is None
 
 
 @pytest.mark.asyncio
@@ -369,16 +511,11 @@ async def test_collector_discards_dirty_symbols_when_active_subscriptions_are_kn
     bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
     bridge.mark_active([])
     provider = CountingProvider()
-    published: list[TdxBar] = []
-
-    async def publish_bar(bar: TdxBar) -> None:
-        published.append(bar)
 
     collector = TdxMinuteCollector(
         provider=provider,
         bridge=bridge,
         period="1m",
-        bar_publisher=publish_bar,
     )
     collector.mark_dirty("600519.SH")
 
@@ -386,7 +523,6 @@ async def test_collector_discards_dirty_symbols_when_active_subscriptions_are_kn
 
     assert emitted == 0
     assert provider.calls == []
-    assert published == []
     assert collector.dirty_symbols == set()
 
 
@@ -400,23 +536,24 @@ async def test_collector_keeps_unknown_subscription_state_conservative():
     emitted = await collector.collect_dirty_once()
 
     assert emitted == 1
-    assert provider.calls == [(["600519.SH"], "1m", 3)]
+    assert provider.calls == [["600519.SH"]]
+    assert provider.bar_calls == []
 
 
 @pytest.mark.asyncio
-async def test_collector_records_publish_error_without_reemitting_duplicate():
+async def test_collector_records_snapshot_publish_error_and_allows_retry():
     bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
     publish_calls: list[str] = []
 
-    async def failing_publish_bar(bar: TdxBar) -> None:
-        publish_calls.append(bar.symbol)
+    async def failing_publish_snapshot(snapshot: TdxSnapshot) -> None:
+        publish_calls.append(snapshot.symbol)
         raise RuntimeError("publish failed")
 
     collector = TdxMinuteCollector(
         provider=FakeProvider(),
         bridge=bridge,
         period="1m",
-        bar_publisher=failing_publish_bar,
+        snapshot_publisher=failing_publish_snapshot,
     )
     collector.mark_dirty("600519.SH")
 
@@ -425,9 +562,8 @@ async def test_collector_records_publish_error_without_reemitting_duplicate():
     emitted_again = await collector.collect_dirty_once()
 
     assert emitted == 1
-    assert emitted_again == 0
-    assert publish_calls == ["600519.SH"]
-    assert collector.emitted_bar_keys == {("600519.SH", "1m", "2026-06-26T09:31:00+08:00", "tdx")}
+    assert emitted_again == 1
+    assert publish_calls == ["600519.SH", "600519.SH"]
     assert collector.state == "error"
     assert collector.last_error_code == "TDX_COLLECTOR_PUBLISH_ERROR"
 
@@ -752,22 +888,20 @@ async def test_subscription_client_rollback_failure_does_not_mask_original_excep
 
 
 @pytest.mark.asyncio
-async def test_collector_suppresses_duplicates_by_symbol_period_bartime_provider():
+async def test_collector_does_not_use_bar_duplicate_keys_for_snapshots():
     bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
-    collector = TdxMinuteCollector(provider=DuplicateProvider(), bridge=bridge, period="1m")
+    provider = FakeProvider()
+    collector = TdxMinuteCollector(provider=provider, bridge=bridge, period="1m")
     collector.mark_dirty("600519.SH")
 
     emitted = await collector.collect_dirty_once()
 
-    assert emitted == 2
-    assert collector.emitted_bar_keys == {
-        ("600519.SH", "1m", "2026-06-26T09:31:00+08:00", "tdx"),
-        ("600519.SH", "1m", "2026-06-26T09:31:00+08:00", "alternate"),
-    }
+    assert emitted == 1
+    assert provider.bar_calls == []
 
 
 @pytest.mark.asyncio
-async def test_collector_accepts_dicts_and_tdx_bar_models():
+async def test_collector_accepts_dicts_and_tdx_snapshot_models():
     bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
     collector = TdxMinuteCollector(provider=MixedProvider(), bridge=bridge, period="1m")
     collector.mark_dirty("600519.SH")
@@ -775,11 +909,11 @@ async def test_collector_accepts_dicts_and_tdx_bar_models():
     emitted = await collector.collect_dirty_once()
 
     assert emitted == 2
-    assert bridge.event_queue_depth == 2
+    assert bridge.event_queue_depth == 0
 
 
 @pytest.mark.asyncio
-async def test_collector_records_stale_state_when_no_bars_are_returned():
+async def test_collector_records_stale_state_when_no_snapshots_are_returned():
     bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
     collector = TdxMinuteCollector(provider=EmptyProvider(), bridge=bridge, period="1m")
     collector.mark_dirty("600519.SH")
@@ -802,7 +936,7 @@ async def test_collector_records_error_state_when_provider_raises():
 
     assert emitted == 0
     assert collector.state == "error"
-    assert collector.last_error_code == "TDX_COLLECTOR_PROVIDER_ERROR"
+    assert collector.last_error_code == "TDX_COLLECTOR_SNAPSHOT_ERROR"
     assert collector.stale_symbols == {"600519.SH"}
 
 
@@ -839,15 +973,15 @@ async def test_lifespan_creates_runtime_without_overwriting_injected_fakes(monke
     fake_provider = FakeProvider()
     fake_bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
 
-    async def injected_bar_publisher(bar: TdxBar) -> None:
-        _ = bar
+    async def injected_snapshot_publisher(snapshot: TdxSnapshot) -> None:
+        _ = snapshot
 
     fake_collector = TdxMinuteCollector(
         provider=fake_provider,
         bridge=fake_bridge,
         period="1m",
         collect_delay_seconds=999,
-        bar_publisher=injected_bar_publisher,
+        snapshot_publisher=injected_snapshot_publisher,
     )
     monkeypatch.setattr(tdx.main, "create_tdx_adapter", lambda: fake_adapter)
     tdx.main.tdx_adapter = None
@@ -862,7 +996,7 @@ async def test_lifespan_creates_runtime_without_overwriting_injected_fakes(monke
             assert tdx.main.tdx_provider is fake_provider
             assert tdx.main.tdx_bridge is fake_bridge
             assert tdx.main.tdx_collector is fake_collector
-            assert fake_collector.bar_publisher is injected_bar_publisher
+            assert fake_collector.snapshot_publisher is injected_snapshot_publisher
             assert tdx.main.tdx_subscription_client is not None
             assert fake_collector._task is not None
             assert not fake_collector._task.done()
@@ -873,7 +1007,7 @@ async def test_lifespan_creates_runtime_without_overwriting_injected_fakes(monke
         assert tdx.main.tdx_provider is fake_provider
         assert tdx.main.tdx_bridge is fake_bridge
         assert tdx.main.tdx_collector is fake_collector
-        assert fake_collector.bar_publisher is injected_bar_publisher
+        assert fake_collector.snapshot_publisher is injected_snapshot_publisher
         assert tdx.main.tdx_subscription_client is None
     finally:
         tdx.main.tdx_adapter = previous_adapter

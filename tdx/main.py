@@ -17,7 +17,7 @@ from src.core.config import settings
 from src.core.logging import setup_logging
 from src.datasource.tdx_bridge import TdxBridge
 from src.datasource.tdx_collector import TdxMinuteCollector
-from src.datasource.tdx_models import TdxBar
+from src.datasource.tdx_models import TdxSnapshot
 from src.datasource.tdx_provider import TdxDatasourceProvider
 from src.datasource.tdx_subscription import TdxSubscriptionClient
 from src.ws.manager import ConnectionManager
@@ -91,7 +91,7 @@ async def lifespan(_app: FastAPI):
             provider=tdx_provider,
             bridge=tdx_bridge,
             period=settings.tdx.minute_period,
-            bar_publisher=_publish_collector_bar,
+            snapshot_publisher=_publish_collector_snapshot,
         )
         _tdx_collector_owned_by_main = tdx_collector
     else:
@@ -364,32 +364,27 @@ def _read_mapping_list(source: Mapping[str, Any], name: str) -> list[Any]:
     return list(value) if isinstance(value, list | tuple) else []
 
 
-async def _publish_collector_bar(bar: TdxBar) -> None:
-    bar_data = bar.model_dump(by_alias=True)
-    await ws_manager.broadcast(
-        WSMessage(
-            type="bar",
-            provider="tdx",
-            data=bar_data,
-        )
-    )
+async def _publish_collector_snapshot(snapshot: TdxSnapshot) -> None:
     await ws_manager.broadcast(
         WSMessage(
             type="quote",
             provider="tdx",
             data={
-                "stock_code": bar.symbol,
+                "stock_code": snapshot.symbol,
                 "snapshot": {
-                    "Code": bar.symbol,
-                    "Last": bar.close,
-                    "Open": bar.open,
-                    "High": bar.high,
-                    "Low": bar.low,
-                    "Volume": bar.volume,
-                    "Amount": bar.amount,
-                    "BarTime": bar.barTime,
-                    "Provider": bar.provider,
-                    "ReceivedAt": bar.receivedAt,
+                    "Code": snapshot.symbol,
+                    "Now": snapshot.last,
+                    "Last": snapshot.last,
+                    "Open": snapshot.open,
+                    "Max": snapshot.high,
+                    "High": snapshot.high,
+                    "Min": snapshot.low,
+                    "Low": snapshot.low,
+                    "LastClose": snapshot.lastClose,
+                    "Volume": snapshot.volume,
+                    "Amount": snapshot.amount,
+                    "Provider": snapshot.provider,
+                    "AsOf": snapshot.asOf,
                 },
             },
         )

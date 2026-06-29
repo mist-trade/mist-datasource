@@ -1,4 +1,4 @@
-"""Minute-bar collector driven by TDX subscription callbacks."""
+"""Snapshot collector driven by TDX subscription callbacks."""
 
 import asyncio
 import contextlib
@@ -7,14 +7,12 @@ from typing import Any
 
 from src.core.config import settings
 from src.datasource.tdx_bridge import TdxBridge
-from src.datasource.tdx_models import TdxBar
+from src.datasource.tdx_models import TdxSnapshot
 from src.datasource.tdx_normalization import normalize_symbol
-
-BarKey = tuple[str, str, str, str]
 
 
 class TdxMinuteCollector:
-    """Collect recent minute bars for symbols marked dirty by quote callbacks."""
+    """Collect latest snapshots for symbols marked dirty by quote callbacks."""
 
     def __init__(
         self,
@@ -24,7 +22,7 @@ class TdxMinuteCollector:
         period: str,
         collect_delay_seconds: float | None = None,
         retry_delay_seconds: float | None = None,
-        bar_publisher: Callable[[TdxBar], Awaitable[None]] | None = None,
+        snapshot_publisher: Callable[[TdxSnapshot], Awaitable[None]] | None = None,
     ) -> None:
         self.provider = provider
         self.bridge = bridge
@@ -40,12 +38,11 @@ class TdxMinuteCollector:
             else retry_delay_seconds
         )
         self.dirty_symbols: set[str] = set()
-        self.emitted_bar_keys: set[BarKey] = set()
         self.stale_symbols: set[str] = set()
         self.last_error_code: str | None = None
         self.last_error: str | None = None
         self.state = "not_started"
-        self.bar_publisher = bar_publisher
+        self.snapshot_publisher = snapshot_publisher
         self._task: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
 
@@ -79,37 +76,32 @@ class TdxMinuteCollector:
 
         self.dirty_symbols.difference_update(symbols)
         try:
-            raw_bars = await self.provider.collect_recent_bars(symbols, self.period, 3)
+            raw_snapshots = await self.provider.get_snapshots(symbols)
         except Exception as exc:
             self.dirty_symbols.update(symbols)
             self.stale_symbols.update(symbols)
             self.state = "error"
-            self.last_error_code = "TDX_COLLECTOR_PROVIDER_ERROR"
+            self.last_error_code = "TDX_COLLECTOR_SNAPSHOT_ERROR"
             self.last_error = str(exc)
             self.bridge.last_error_code = self.last_error_code
             return 0
 
-        bars = [_coerce_bar(raw_bar) for raw_bar in raw_bars]
+        snapshots = [_coerce_snapshot(raw_snapshot) for raw_snapshot in raw_snapshots]
         emitted = 0
         fresh_symbols: set[str] = set()
-        symbols_with_bars = {bar.symbol for bar in bars}
+        symbols_with_snapshots = {snapshot.symbol for snapshot in snapshots}
         publish_errors: list[str] = []
-        for bar in bars:
-            key = _bar_key(bar)
-            if key in self.emitted_bar_keys:
-                continue
-            if not self.bridge.enqueue_bar(bar):
-                continue
-            self.emitted_bar_keys.add(key)
-            fresh_symbols.add(bar.symbol)
+        for snapshot in snapshots:
+            self.bridge.record_callback()
+            fresh_symbols.add(snapshot.symbol)
             emitted += 1
-            if self.bar_publisher is not None:
+            if self.snapshot_publisher is not None:
                 try:
-                    await self.bar_publisher(bar)
+                    await self.snapshot_publisher(snapshot)
                 except Exception as exc:
                     publish_errors.append(str(exc))
 
-        stale_symbols = set(symbols) - symbols_with_bars
+        stale_symbols = set(symbols) - symbols_with_snapshots
         self.stale_symbols.difference_update(fresh_symbols)
         if publish_errors:
             self.state = "error"
@@ -120,7 +112,7 @@ class TdxMinuteCollector:
             self.stale_symbols.update(stale_symbols)
             self.state = "stale"
             self.last_error_code = "TDX_COLLECTOR_STALE"
-            self.last_error = "No fresh minute bars returned for dirty symbols"
+            self.last_error = "No fresh snapshots returned for dirty symbols"
             self.bridge.last_error_code = self.last_error_code
         else:
             if emitted > 0 or self.last_error_code != "TDX_COLLECTOR_PUBLISH_ERROR":
@@ -172,16 +164,16 @@ class TdxMinuteCollector:
             raise
 
 
-def _coerce_bar(raw_bar: TdxBar | dict[str, Any]) -> TdxBar:
-    bar = raw_bar if isinstance(raw_bar, TdxBar) else TdxBar.model_validate(raw_bar)
-    normalized_symbol = normalize_symbol(bar.symbol)
-    if normalized_symbol == bar.symbol:
-        return bar
-    return bar.model_copy(update={"symbol": normalized_symbol})
-
-
-def _bar_key(bar: TdxBar) -> BarKey:
-    return (bar.symbol, bar.period, bar.barTime, bar.provider)
+def _coerce_snapshot(raw_snapshot: TdxSnapshot | dict[str, Any]) -> TdxSnapshot:
+    snapshot = (
+        raw_snapshot
+        if isinstance(raw_snapshot, TdxSnapshot)
+        else TdxSnapshot.model_validate(raw_snapshot)
+    )
+    normalized_symbol = normalize_symbol(snapshot.symbol)
+    if normalized_symbol == snapshot.symbol:
+        return snapshot
+    return snapshot.model_copy(update={"symbol": normalized_symbol})
 
 
 def dirty_symbols_from_payloads(payloads: Iterable[dict[str, Any]]) -> set[str]:

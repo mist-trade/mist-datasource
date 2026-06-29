@@ -37,9 +37,7 @@ class CallbackCapturingAdapter:
 
     async def unsubscribe_hq(self, stock_list: list[str]) -> None:
         self.unsubscribed.extend(stock_list)
-        self.subscribed = [
-            stock for stock in self.subscribed if stock not in set(stock_list)
-        ]
+        self.subscribed = [stock for stock in self.subscribed if stock not in set(stock_list)]
 
     async def get_market_snapshot(
         self, stock_code: str, _field_list: list[str] | None = None
@@ -53,6 +51,33 @@ class CallbackCapturingAdapter:
 class FakeRealtimeProvider:
     def __init__(self) -> None:
         self.collect_calls: list[tuple[list[str], str, int]] = []
+        self.snapshot_calls: list[list[str]] = []
+        self.fail_snapshot = False
+
+    async def get_snapshots(
+        self,
+        symbols: list[str],
+        fields: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        _ = fields
+        self.snapshot_calls.append(list(symbols))
+        if self.fail_snapshot:
+            raise RuntimeError("snapshot failed")
+        return [
+            {
+                "symbol": symbol,
+                "last": 10.25,
+                "open": 10.0,
+                "high": 10.5,
+                "low": 9.9,
+                "lastClose": 9.95,
+                "volume": 1500,
+                "amount": 15375.0,
+                "provider": "tdx",
+                "asOf": "2026-06-29T14:55:01+08:00",
+            }
+            for symbol in symbols
+        ]
 
     async def collect_recent_bars(
         self,
@@ -140,9 +165,7 @@ def client():
         tdx.main._tdx_provider_owned_by_main = previous_owned_provider
         tdx.main._tdx_bridge_owned_by_main = previous_owned_bridge
         tdx.main._tdx_collector_owned_by_main = previous_owned_collector
-        tdx.main._tdx_subscription_client_owned_by_main = (
-            previous_owned_subscription_client
-        )
+        tdx.main._tdx_subscription_client_owned_by_main = previous_owned_subscription_client
 
 
 def test_ws_ping_pong(client):
@@ -304,7 +327,7 @@ def test_ws_subscription_commands_go_through_subscription_client(monkeypatch):
     ]
 
 
-def test_ws_callback_marks_collector_dirty_without_emitting_direct_quote(monkeypatch):
+def test_ws_callback_marks_dirty_and_collector_emits_snapshot_quote(monkeypatch):
     import tdx.main
 
     adapter = CallbackCapturingAdapter()
@@ -336,7 +359,7 @@ def test_ws_callback_marks_collector_dirty_without_emitting_direct_quote(monkeyp
         adapter.callback({"Code": "SH600519", "ErrorId": "0"})
 
         assert tdx.main.tdx_collector.dirty_symbols == {"600519.SH"}
-        assert adapter.snapshot_calls == []
+        assert provider.snapshot_calls == []
         with pytest.raises(Empty):
             received.get(timeout=0.2)
 
@@ -345,21 +368,23 @@ def test_ws_callback_marks_collector_dirty_without_emitting_direct_quote(monkeyp
         try:
             status, payload = received.get(timeout=2)
         except Empty:
-            pytest.fail("bar was not received after collector collected dirty symbol")
+            pytest.fail("quote was not received after collector collected dirty symbol")
 
         assert status == "ok", payload
-        assert payload["type"] == "bar"
+        assert payload["type"] == "quote"
         assert payload["provider"] == "tdx"
-        assert payload["data"]["symbol"] == "600519.SH"
-        assert payload["data"]["barTime"] == "2026-06-26T09:31:00+08:00"
-        assert payload["data"]["open"] == 10.1
-        assert payload["data"]["close"] == 10.2
+        assert payload["data"]["stock_code"] == "600519.SH"
+        assert payload["data"]["snapshot"]["Code"] == "600519.SH"
+        assert payload["data"]["snapshot"]["Now"] == 10.25
+        assert payload["data"]["snapshot"]["LastClose"] == 9.95
+        assert provider.snapshot_calls == [["600519.SH"]]
+        assert provider.collect_calls == []
 
         health = callback_client.get("/health").json()
         assert health["lastCallbackAt"] is not None
 
 
-def test_ws_collector_bar_publish_also_emits_derived_legacy_quote(monkeypatch):
+def test_ws_collector_publishes_snapshot_quote_only(monkeypatch):
     import tdx.main
 
     adapter = CallbackCapturingAdapter()
@@ -382,15 +407,14 @@ def test_ws_collector_bar_publish_also_emits_derived_legacy_quote(monkeypatch):
         adapter.callback({"Code": "SH600519", "ErrorId": "0"})
         callback_client.portal.call(tdx.main.tdx_collector.collect_dirty_once)
 
-        bar_payload = ws.receive_json()
         quote_payload = ws.receive_json()
 
-    assert bar_payload["type"] == "bar"
     assert quote_payload["type"] == "quote"
     assert quote_payload["data"]["stock_code"] == "600519.SH"
     assert quote_payload["data"]["snapshot"]["Code"] == "600519.SH"
-    assert quote_payload["data"]["snapshot"]["Last"] == 10.2
-    assert adapter.snapshot_calls == []
+    assert quote_payload["data"]["snapshot"]["Now"] == 10.25
+    assert provider.snapshot_calls == [["600519.SH"]]
+    assert provider.collect_calls == []
 
 
 def test_ws_callback_after_disconnect_does_not_update_bridge_health(monkeypatch):
@@ -502,12 +526,12 @@ def test_ws_message_protocol_accepts_bar_type():
     assert message.type == "bar"
 
 
-def test_ws_quote_processing_failure_no_longer_fetches_snapshot_from_callback(monkeypatch):
+def test_ws_snapshot_failure_records_collector_error_without_marketdata_fallback(monkeypatch):
     import tdx.main
 
     adapter = CallbackCapturingAdapter()
-    adapter.fail_snapshot = True
     provider = FakeRealtimeProvider()
+    provider.fail_snapshot = True
     monkeypatch.setattr(tdx.main, "create_tdx_adapter", lambda: adapter)
     monkeypatch.setattr(tdx.main, "TdxDatasourceProvider", lambda: provider)
     monkeypatch.setattr(tdx.main, "tdx_bridge", None)
@@ -524,11 +548,9 @@ def test_ws_quote_processing_failure_no_longer_fetches_snapshot_from_callback(mo
         assert adapter.callback is not None
 
         adapter.callback({"Code": "600519.SH", "ErrorId": "0"})
-        callback_client.portal.call(tdx.main.tdx_collector.collect_dirty_once)
+        emitted = callback_client.portal.call(tdx.main.tdx_collector.collect_dirty_once)
 
-        bar_payload = ws.receive_json()
-        quote_payload = ws.receive_json()
-
-        assert bar_payload["type"] == "bar"
-        assert quote_payload["type"] == "quote"
-        assert adapter.snapshot_calls == []
+        assert emitted == 0
+        assert provider.snapshot_calls == [["600519.SH"]]
+        assert provider.collect_calls == []
+        assert tdx.main.tdx_collector.last_error_code == "TDX_COLLECTOR_SNAPSHOT_ERROR"
