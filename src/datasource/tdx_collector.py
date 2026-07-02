@@ -45,6 +45,7 @@ class TdxMinuteCollector:
         self.snapshot_publisher = snapshot_publisher
         self._task: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     @property
     def last_minute_bar_at(self) -> str | None:
@@ -64,7 +65,11 @@ class TdxMinuteCollector:
     def mark_dirty_from_callback(self, payload: dict[str, Any]) -> None:
         code = payload.get("Code")
         if isinstance(code, str) and code:
-            self.mark_dirty(code)
+            loop = self._loop
+            if loop is not None and not loop.is_closed():
+                loop.call_soon_threadsafe(self.mark_dirty, code)
+            else:
+                self.mark_dirty(code)
 
     async def collect_dirty_once(self) -> int:
         symbols = sorted(self.dirty_symbols)
@@ -135,6 +140,7 @@ class TdxMinuteCollector:
     async def start(self) -> None:
         if self._task and not self._task.done():
             return
+        self._loop = asyncio.get_running_loop()
         self._stopping = asyncio.Event()
         self._task = asyncio.create_task(self._run_loop())
 
@@ -142,12 +148,14 @@ class TdxMinuteCollector:
         self._stopping.set()
         task = self._task
         if task is None:
+            self._loop = None
             self.state = "stopped"
             return
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
         self._task = None
+        self._loop = None
         self.state = "stopped"
 
     async def _run_loop(self) -> None:

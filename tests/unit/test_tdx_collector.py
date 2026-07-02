@@ -404,6 +404,20 @@ async def test_callback_only_marks_dirty_symbol():
 
 
 @pytest.mark.asyncio
+async def test_callback_dirty_symbol_is_scheduled_on_event_loop():
+    bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
+    collector = TdxMinuteCollector(provider=FakeProvider(), bridge=bridge, period="1m")
+    await collector.start()
+
+    collector.mark_dirty_from_callback({"Code": "SH600519", "ErrorId": "0"})
+
+    assert collector.dirty_symbols == set()
+    await asyncio.sleep(0)
+    assert collector.dirty_symbols == {"600519.SH"}
+    await collector.stop()
+
+
+@pytest.mark.asyncio
 async def test_collector_collects_dirty_snapshot_once():
     bridge = TdxBridge(queue_max_size=10, max_subscriptions=100)
     provider = FakeProvider()
@@ -621,6 +635,7 @@ async def test_subscription_callback_marks_dirty_without_collecting_bars():
     await client.subscribe(["600519.SH"])
     assert adapter.callback is not None
     adapter.callback({"Code": "SH600519", "ErrorId": "0"})
+    await asyncio.sleep(0)
 
     assert collector.payloads == [{"Code": "SH600519", "ErrorId": "0"}]
     assert adapter.snapshot_calls == []
@@ -672,6 +687,7 @@ async def test_subscription_callback_accepts_official_json_string_payload(caplog
 
     with caplog.at_level(logging.INFO, logger="src.datasource.tdx_subscription"):
         adapter.callback('{"Code":"SH600519","ErrorId":"0"}')
+    await asyncio.sleep(0)
 
     health = bridge.health()
     assert collector.payloads == [{"Code": "SH600519", "ErrorId": "0"}]

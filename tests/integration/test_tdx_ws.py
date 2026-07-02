@@ -3,6 +3,7 @@
 Tests WebSocket connection, ping/pong, and subscription functionality.
 """
 
+import asyncio
 from queue import Empty, Queue
 from threading import Thread
 from typing import Any
@@ -358,6 +359,7 @@ def test_ws_callback_marks_dirty_and_collector_emits_snapshot_quote(monkeypatch)
         Thread(target=receive_message, daemon=True).start()
         adapter.callback({"Code": "SH600519", "ErrorId": "0"})
 
+        callback_client.portal.call(asyncio.sleep, 0)
         assert tdx.main.tdx_collector.dirty_symbols == {"600519.SH"}
         assert provider.snapshot_calls == []
         with pytest.raises(Empty):

@@ -433,6 +433,29 @@ async def test_get_price_volume_calls_tdx_pricevol_method():
 
 
 @pytest.mark.asyncio
+async def test_get_price_volume_raises_when_requested_symbol_is_missing():
+    fake_client = FakeTdxHttpClient(
+        {
+            "get_pricevol": {
+                "Value": {
+                    "000001.SZ": {
+                        "Now": "12.3",
+                        "Volume": "1000",
+                    }
+                }
+            }
+        }
+    )
+    provider = TdxDatasourceProvider(fake_client)
+
+    with pytest.raises(Exception) as exc_info:
+        await provider.get_price_volume(["600519.SH"], fields=["price", "volume"])
+
+    assert exc_info.value.code == "TDX_SYMBOL_NOT_FOUND"
+    assert exc_info.value.details["symbol"] == "600519.SH"
+
+
+@pytest.mark.asyncio
 async def test_get_security_relations_calls_tdx_relation_method():
     fake_client = FakeTdxHttpClient(
         {

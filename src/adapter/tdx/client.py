@@ -28,6 +28,7 @@ from typing import Any
 from src.adapter.base import MarketDataAdapter
 from src.core.config import settings
 from src.core.exceptions import AdapterError
+from src.datasource.capabilities import ProviderCapabilityUnsupported
 
 
 def _load_tq_module(sdk_path: str) -> Any:
@@ -103,8 +104,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         while not self._should_stop:
             try:
-                # 使用轻量级 API 调用保持连接
-                self._tq.get_stock_list("1")
+                await self._call_tq("get_stock_list", "1")
             except Exception as e:
                 # 心跳失败不影响主流程，只记录日志
                 print(f"TDX heartbeat warning: {e}")
@@ -135,7 +135,7 @@ class TDXAdapter(MarketDataAdapter):
             # initialize 用 SDK 目录下的脚本路径作为策略标识
             # TDX 终端用此路径做策略名, 传 SDK 目录内的路径避免 "已有同名策略运行" 错误
             init_path = os.path.join(sdk_path, "mist_datasource.py")
-            self._tq.initialize(init_path)
+            await self._call_tq("initialize", init_path)
 
             # 启动心跳保活任务
             self._should_stop = False
@@ -160,13 +160,19 @@ class TDXAdapter(MarketDataAdapter):
             self._heartbeat_task = None
         self._tq = None
 
+    async def _call_tq(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
+        if self._tq is None:
+            raise AdapterError("TDX adapter not initialized")
+        method = getattr(self._tq, method_name)
+        return await asyncio.to_thread(method, *args, **kwargs)
+
     async def get_stock_list(self, market: str = "0") -> list[str]:
         """获取市场股票列表.
 
         对应 TDX SDK: tq.get_stock_list(market)
         """
         try:
-            return self._tq.get_stock_list(market)
+            return await self._call_tq("get_stock_list", market)
         except Exception as e:
             raise AdapterError(f"Failed to get stock list: {e}") from e
 
@@ -176,7 +182,12 @@ class TDXAdapter(MarketDataAdapter):
         对应 TDX SDK: tq.get_stock_list_in_sector(block_code, block_type, list_type)
         """
         try:
-            return self._tq.get_stock_list_in_sector(block_code, block_type, list_type)
+            return await self._call_tq(
+                "get_stock_list_in_sector",
+                block_code,
+                block_type,
+                list_type,
+            )
         except Exception as e:
             raise AdapterError(f"Failed to get stock list in sector: {e}") from e
 
@@ -202,7 +213,8 @@ class TDXAdapter(MarketDataAdapter):
         try:
             dividend_type = kwargs.get("dividend_type", "front")
 
-            df = self._tq.get_market_data(
+            df = await self._call_tq(
+                "get_market_data",
                 field_list=fields,
                 stock_list=stock_list,
                 start_time=start_time,
@@ -213,7 +225,12 @@ class TDXAdapter(MarketDataAdapter):
             )
             result = {}
             for field in fields:
-                result[field] = self._tq.price_df(df, field, column_names=stock_list)
+                result[field] = await self._call_tq(
+                    "price_df",
+                    df,
+                    field,
+                    column_names=stock_list,
+                )
             return result
         except Exception as e:
             raise AdapterError(f"Failed to get market data: {e}") from e
@@ -225,9 +242,12 @@ class TDXAdapter(MarketDataAdapter):
 
         Note: TDX 实时行情推送机制需根据实际 API 实现.
         """
-        raise NotImplementedError(
-            "TDX real-time quote subscription is not yet implemented. "
-            "Please refer to tqcenter documentation for the subscription API."
+        _ = stock_list
+        raise ProviderCapabilityUnsupported(
+            provider="tdx",
+            family="websocket-subscriptions",
+            operation="subscribe_quote",
+            fallback="Use subscribe_hq with TdxSubscriptionClient.",
         )
 
     async def send_user_block(
@@ -238,7 +258,7 @@ class TDXAdapter(MarketDataAdapter):
         对应 TDX SDK: tq.send_user_block(block_code, stocks, show=True)
         """
         try:
-            self._tq.send_user_block(block_code, stocks, show=True)
+            await self._call_tq("send_user_block", block_code, stocks, show=True)
         except Exception as e:
             raise AdapterError(f"Failed to send user block: {e}") from e
 
@@ -257,7 +277,7 @@ class TDXAdapter(MarketDataAdapter):
             市场快照数据字典
         """
         try:
-            return self._tq.get_market_snapshot(stock_code, field_list or [])
+            return await self._call_tq("get_market_snapshot", stock_code, field_list or [])
         except Exception as e:
             raise AdapterError(f"Failed to get market snapshot: {e}") from e
 
@@ -275,7 +295,7 @@ class TDXAdapter(MarketDataAdapter):
             除权除息数据 (DataFrame)
         """
         try:
-            return self._tq.get_divid_factors(stock_code, start_time, end_time)
+            return await self._call_tq("get_divid_factors", stock_code, start_time, end_time)
         except Exception as e:
             raise AdapterError(f"Failed to get dividend factors: {e}") from e
 
@@ -293,7 +313,7 @@ class TDXAdapter(MarketDataAdapter):
             股本数据列表
         """
         try:
-            return self._tq.get_gb_info(stock_code, date_list or [], count)
+            return await self._call_tq("get_gb_info", stock_code, date_list or [], count)
         except Exception as e:
             raise AdapterError(f"Failed to get gb info: {e}") from e
 
@@ -312,7 +332,7 @@ class TDXAdapter(MarketDataAdapter):
             交易日列表
         """
         try:
-            return self._tq.get_trading_dates(market, start_time, end_time, count)
+            return await self._call_tq("get_trading_dates", market, start_time, end_time, count)
         except Exception as e:
             raise AdapterError(f"Failed to get trading dates: {e}") from e
 
@@ -329,7 +349,7 @@ class TDXAdapter(MarketDataAdapter):
             刷新结果字典
         """
         try:
-            return self._tq.refresh_cache(market, force)
+            return await self._call_tq("refresh_cache", market, force)
         except Exception as e:
             raise AdapterError(f"Failed to refresh cache: {e}") from e
 
@@ -346,7 +366,7 @@ class TDXAdapter(MarketDataAdapter):
             刷新结果字典
         """
         try:
-            return self._tq.refresh_kline(stock_list or [], period)
+            return await self._call_tq("refresh_kline", stock_list or [], period)
         except Exception as e:
             raise AdapterError(f"Failed to refresh kline: {e}") from e
 
@@ -364,7 +384,7 @@ class TDXAdapter(MarketDataAdapter):
             下载结果字典
         """
         try:
-            return self._tq.download_file(stock_code, down_time, down_type)
+            return await self._call_tq("download_file", stock_code, down_time, down_type)
         except Exception as e:
             raise AdapterError(f"Failed to download file: {e}") from e
 
@@ -382,7 +402,7 @@ class TDXAdapter(MarketDataAdapter):
             股票基本信息字典
         """
         try:
-            return self._tq.get_stock_info(stock_code)
+            return await self._call_tq("get_stock_info", stock_code)
         except Exception as e:
             raise AdapterError(f"Failed to get stock info: {e}") from e
 
@@ -399,7 +419,7 @@ class TDXAdapter(MarketDataAdapter):
             更多信息字典
         """
         try:
-            return self._tq.get_more_info(stock_code, field_list or [])
+            return await self._call_tq("get_more_info", stock_code, field_list or [])
         except Exception as e:
             raise AdapterError(f"Failed to get more info: {e}") from e
 
@@ -415,7 +435,7 @@ class TDXAdapter(MarketDataAdapter):
             板块关联信息字典
         """
         try:
-            return self._tq.get_relation(stock_code)
+            return await self._call_tq("get_relation", stock_code)
         except Exception as e:
             raise AdapterError(f"Failed to get relation: {e}") from e
 
@@ -446,7 +466,14 @@ class TDXAdapter(MarketDataAdapter):
             专业财务数据字典
         """
         try:
-            return self._tq.get_financial_data(stock_list, field_list, start_time, end_time, report_type)
+            return await self._call_tq(
+                "get_financial_data",
+                stock_list,
+                field_list,
+                start_time,
+                end_time,
+                report_type,
+            )
         except Exception as e:
             raise AdapterError(f"Failed to get financial data: {e}") from e
 
@@ -469,7 +496,13 @@ class TDXAdapter(MarketDataAdapter):
             专业财务数据字典
         """
         try:
-            return self._tq.get_financial_data_by_date(stock_list, field_list, year, mmdd)
+            return await self._call_tq(
+                "get_financial_data_by_date",
+                stock_list,
+                field_list,
+                year,
+                mmdd,
+            )
         except Exception as e:
             raise AdapterError(f"Failed to get financial data by date: {e}") from e
 
@@ -486,7 +519,7 @@ class TDXAdapter(MarketDataAdapter):
             股票单个数据字典
         """
         try:
-            return self._tq.get_gp_one_data(stock_list, field_list)
+            return await self._call_tq("get_gp_one_data", stock_list, field_list)
         except Exception as e:
             raise AdapterError(f"Failed to get gp one data: {e}") from e
 
@@ -509,7 +542,13 @@ class TDXAdapter(MarketDataAdapter):
             板块交易数据字典
         """
         try:
-            return self._tq.get_bkjy_value(stock_list, field_list, start_time, end_time)
+            return await self._call_tq(
+                "get_bkjy_value",
+                stock_list,
+                field_list,
+                start_time,
+                end_time,
+            )
         except Exception as e:
             raise AdapterError(f"Failed to get bkjy value: {e}") from e
 
@@ -532,7 +571,13 @@ class TDXAdapter(MarketDataAdapter):
             板块交易数据字典
         """
         try:
-            return self._tq.get_bkjy_value_by_date(stock_list, field_list, year, mmdd)
+            return await self._call_tq(
+                "get_bkjy_value_by_date",
+                stock_list,
+                field_list,
+                year,
+                mmdd,
+            )
         except Exception as e:
             raise AdapterError(f"Failed to get bkjy value by date: {e}") from e
 
@@ -555,7 +600,13 @@ class TDXAdapter(MarketDataAdapter):
             股票交易数据字典
         """
         try:
-            return self._tq.get_gpjy_value(stock_list, field_list, start_time, end_time)
+            return await self._call_tq(
+                "get_gpjy_value",
+                stock_list,
+                field_list,
+                start_time,
+                end_time,
+            )
         except Exception as e:
             raise AdapterError(f"Failed to get gpjy value: {e}") from e
 
@@ -578,7 +629,13 @@ class TDXAdapter(MarketDataAdapter):
             股票交易数据字典
         """
         try:
-            return self._tq.get_gpjy_value_by_date(stock_list, field_list, year, mmdd)
+            return await self._call_tq(
+                "get_gpjy_value_by_date",
+                stock_list,
+                field_list,
+                year,
+                mmdd,
+            )
         except Exception as e:
             raise AdapterError(f"Failed to get gpjy value by date: {e}") from e
 
@@ -596,7 +653,7 @@ class TDXAdapter(MarketDataAdapter):
             市场交易数据字典
         """
         try:
-            return self._tq.get_scjy_value(field_list, start_time, end_time)
+            return await self._call_tq("get_scjy_value", field_list, start_time, end_time)
         except Exception as e:
             raise AdapterError(f"Failed to get scjy value: {e}") from e
 
@@ -614,7 +671,7 @@ class TDXAdapter(MarketDataAdapter):
             市场交易数据字典
         """
         try:
-            return self._tq.get_scjy_value_by_date(field_list, year, mmdd)
+            return await self._call_tq("get_scjy_value_by_date", field_list, year, mmdd)
         except Exception as e:
             raise AdapterError(f"Failed to get scjy value by date: {e}") from e
 
@@ -632,7 +689,7 @@ class TDXAdapter(MarketDataAdapter):
             板块代码列表
         """
         try:
-            return self._tq.get_sector_list(list_type)
+            return await self._call_tq("get_sector_list", list_type)
         except Exception as e:
             raise AdapterError(f"Failed to get sector list: {e}") from e
 
@@ -645,7 +702,7 @@ class TDXAdapter(MarketDataAdapter):
             自定义板块列表
         """
         try:
-            return self._tq.get_user_sector()
+            return await self._call_tq("get_user_sector")
         except Exception as e:
             raise AdapterError(f"Failed to get user sector: {e}") from e
 
@@ -721,7 +778,7 @@ class TDXAdapter(MarketDataAdapter):
         try:
             if field_list is None:
                 field_list = []
-            return self._tq.get_cb_info(stock_code, field_list)
+            return await self._call_tq("get_cb_info", stock_code, field_list)
         except Exception as e:
             raise AdapterError(f"Failed to get cb info: {e}") from e
 
@@ -738,7 +795,7 @@ class TDXAdapter(MarketDataAdapter):
             新股申购信息列表
         """
         try:
-            return self._tq.get_ipo_info(ipo_type, ipo_date)
+            return await self._call_tq("get_ipo_info", ipo_type, ipo_date)
         except Exception as e:
             raise AdapterError(f"Failed to get ipo info: {e}") from e
 
@@ -754,7 +811,7 @@ class TDXAdapter(MarketDataAdapter):
             ETF信息列表
         """
         try:
-            return self._tq.get_trackzs_etf_info(zs_code)
+            return await self._call_tq("get_trackzs_etf_info", zs_code)
         except Exception as e:
             raise AdapterError(f"Failed to get trackzs etf info: {e}") from e
 
@@ -773,7 +830,11 @@ class TDXAdapter(MarketDataAdapter):
             订阅结果字典
         """
         try:
-            return self._tq.subscribe_hq(stock_list=stock_list, callback=callback)
+            return await self._call_tq(
+                "subscribe_hq",
+                stock_list=stock_list,
+                callback=callback,
+            )
         except Exception as e:
             raise AdapterError(f"Failed to subscribe hq: {e}") from e
 
@@ -791,7 +852,7 @@ class TDXAdapter(MarketDataAdapter):
         try:
             if stock_list is None:
                 stock_list = []
-            return self._tq.unsubscribe_hq(stock_list=stock_list)
+            return await self._call_tq("unsubscribe_hq", stock_list=stock_list)
         except Exception as e:
             raise AdapterError(f"Failed to unsubscribe hq: {e}") from e
 
@@ -804,7 +865,7 @@ class TDXAdapter(MarketDataAdapter):
             订阅的股票代码列表
         """
         try:
-            return self._tq.get_subscribe_hq_stock_list()
+            return await self._call_tq("get_subscribe_hq_stock_list")
         except Exception as e:
             raise AdapterError(f"Failed to get subscribe list: {e}") from e
 
@@ -823,7 +884,7 @@ class TDXAdapter(MarketDataAdapter):
             执行结果字典
         """
         try:
-            return self._tq.exec_to_tdx(cmd, param)
+            return await self._call_tq("exec_to_tdx", cmd, param)
         except Exception as e:
             raise AdapterError(f"Failed to exec to tdx: {e}") from e
 

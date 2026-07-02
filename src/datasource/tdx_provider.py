@@ -77,6 +77,20 @@ class TdxNativeError(Exception):
         }
 
 
+class TdxSymbolNotFoundError(Exception):
+    def __init__(self, *, symbol: str, native: Any) -> None:
+        normalized_symbol = normalize_symbol(symbol)
+        message = f"TDX native response does not contain requested symbol {normalized_symbol}"
+        super().__init__(message)
+        self.code = "TDX_SYMBOL_NOT_FOUND"
+        self.message = message
+        self.retryable = False
+        self.details = {
+            "symbol": normalized_symbol,
+            "native": native,
+        }
+
+
 def _raise_for_native_error(native: Any) -> None:
     if not isinstance(native, dict):
         return
@@ -1148,19 +1162,21 @@ def _native_items(native: Any, *preferred_list_fields: str) -> list[Any]:
 
 def _native_item_for_symbol(native: Any, symbol: str) -> Any:
     values = _unwrap_tdx_value(native)
-    candidates = {symbol, to_tdx_http_code(symbol), normalize_symbol(symbol), to_tdx_code(symbol)}
+    normalized_symbol = normalize_symbol(symbol)
+    candidates = _code_candidates(normalized_symbol)
     if isinstance(values, dict):
         for key, value in values.items():
-            if str(key).upper() in {candidate.upper() for candidate in candidates}:
+            if str(key).upper() in candidates:
                 return value
-        return values
+        if _native_record_matches_symbol(values, candidates):
+            return values
+        raise TdxSymbolNotFoundError(symbol=normalized_symbol, native=native)
     if isinstance(values, list | tuple):
         for item in values:
-            if isinstance(item, dict):
-                item_symbol = _first_native_value(item, "symbol", "code", "stock_code", "Code")
-                if item_symbol and normalize_symbol(str(item_symbol)) == normalize_symbol(symbol):
-                    return item
-    return values
+            if isinstance(item, dict) and _native_record_matches_symbol(item, candidates):
+                return item
+        raise TdxSymbolNotFoundError(symbol=normalized_symbol, native=native)
+    raise TdxSymbolNotFoundError(symbol=normalized_symbol, native=native)
 
 
 def _as_sequence(value: Any) -> list[Any]:
@@ -1233,8 +1249,16 @@ def _code_candidates(code: str) -> set[str]:
     return {
         str(code).upper(),
         normalize_symbol(str(code)).upper(),
+        to_tdx_http_code(str(code)).upper(),
         to_tdx_code(str(code)).upper(),
     }
+
+
+def _native_record_matches_symbol(record: dict[str, Any], candidates: set[str]) -> bool:
+    item_symbol = _first_native_value(record, "symbol", "code", "stock_code", "Code")
+    if item_symbol is None:
+        return False
+    return normalize_symbol(str(item_symbol)).upper() in candidates
 
 
 def _metadata_value(record: Any, field_name: str) -> str | None:
