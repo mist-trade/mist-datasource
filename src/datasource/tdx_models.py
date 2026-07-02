@@ -14,6 +14,10 @@ def _formula_timeout_ms() -> int:
     return settings.tdx.formula_timeout_ms
 
 
+def _empty_stock_data() -> list[dict[str, Any]]:
+    return []
+
+
 class TdxBar(TdxModel):
     symbol: str
     period: str
@@ -266,7 +270,7 @@ class TdxFormulaSetDataRequest(TdxModel):
     provider: Literal["tdx", "qmt"] = "tdx"
     stock_code: str = Field(alias="stockCode")
     stock_period: str = Field(default="1d", alias="stockPeriod")
-    stock_data: list[dict[str, Any]] = Field(default_factory=list, alias="stockData")
+    stock_data: list[dict[str, Any]] = Field(default_factory=_empty_stock_data, alias="stockData")
     count: int = -1
     dividend_type: int = Field(default=0, alias="dividendType")
     timeout_ms: int = Field(default_factory=_formula_timeout_ms, alias="timeoutMs")

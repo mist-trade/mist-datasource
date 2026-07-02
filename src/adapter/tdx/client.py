@@ -19,6 +19,7 @@ TPythClient.dll 由 SDK 内部通过 Path(__file__).parents[1] 自动定位.
 
 import asyncio
 import contextlib
+import importlib
 import importlib.util
 import os
 import sys
@@ -56,9 +57,8 @@ def _load_tq_module(sdk_path: str) -> Any:
     if sdk_dir not in sys.path:
         sys.path.insert(0, sdk_dir)
     try:
-        from tqcenter import tq
-
-        return tq
+        module = importlib.import_module("tqcenter")
+        return module.__dict__["tq"]
     except ImportError:
         pass
 
@@ -70,7 +70,7 @@ def _load_tq_module(sdk_path: str) -> Any:
             module = importlib.util.module_from_spec(spec)
             sys.modules["tqcenter"] = module
             spec.loader.exec_module(module)
-            return module.tq
+            return module.__dict__["tq"]
 
     raise ImportError(
         f"Cannot load tq module from SDK path: {sdk_path}. "
@@ -223,7 +223,7 @@ class TDXAdapter(MarketDataAdapter):
                 period=period,
                 fill_data=True,
             )
-            result = {}
+            result: dict[str, Any] = {}
             for field in fields:
                 result[field] = await self._call_tq(
                     "price_df",
@@ -350,7 +350,7 @@ class TDXAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get trading dates: {e}") from e
 
-    async def refresh_cache(self, market: str = "AG", force: bool = False) -> dict:
+    async def refresh_cache(self, market: str = "AG", force: bool = False) -> dict[str, Any]:
         """刷新行情缓存.
 
         对应 TDX SDK: tq.refresh_cache(market, force)
@@ -367,7 +367,7 @@ class TDXAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to refresh cache: {e}") from e
 
-    async def refresh_kline(self, stock_list: list[str] | None = None, period: str = "1d") -> dict:
+    async def refresh_kline(self, stock_list: list[str] | None = None, period: str = "1d") -> dict[str, Any]:
         """刷新K线缓存.
 
         对应 TDX SDK: tq.refresh_kline(stock_list, period)
@@ -384,7 +384,7 @@ class TDXAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to refresh kline: {e}") from e
 
-    async def download_file(self, stock_code: str = "", down_time: str = "", down_type: int = 1) -> dict:
+    async def download_file(self, stock_code: str = "", down_time: str = "", down_type: int = 1) -> dict[str, Any]:
         """下载特定数据文件.
 
         对应 TDX SDK: tq.download_file(stock_code, down_time, down_type)
@@ -404,7 +404,7 @@ class TDXAdapter(MarketDataAdapter):
 
     # ---- Stock Info Methods ----
 
-    async def get_stock_info(self, stock_code: str = "") -> dict:
+    async def get_stock_info(self, stock_code: str = "") -> dict[str, Any]:
         """获取股票基本信息.
 
         对应 TDX SDK: tq.get_stock_info(stock_code)
@@ -420,7 +420,7 @@ class TDXAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get stock info: {e}") from e
 
-    async def get_more_info(self, stock_code: str = "", field_list: list[str] | None = None) -> dict:
+    async def get_more_info(self, stock_code: str = "", field_list: list[str] | None = None) -> dict[str, Any]:
         """获取更多信息.
 
         对应 TDX SDK: tq.get_more_info(stock_code, field_list)
@@ -437,7 +437,7 @@ class TDXAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get more info: {e}") from e
 
-    async def get_relation(self, stock_code: str = "") -> dict:
+    async def get_relation(self, stock_code: str = "") -> dict[str, Any]:
         """获取股票所属板块.
 
         对应 TDX SDK: tq.get_relation(stock_code)
@@ -462,7 +462,7 @@ class TDXAdapter(MarketDataAdapter):
         start_time: str = "",
         end_time: str = "",
         report_type: str = "announce_time",
-    ) -> dict:
+    ) -> dict[str, Any]:
         """获取专业财务数据.
 
         对应 TDX SDK: tq.get_financial_data(
@@ -493,7 +493,7 @@ class TDXAdapter(MarketDataAdapter):
 
     async def get_financial_data_by_date(
         self, stock_list: list[str], field_list: list[str], year: int = 0, mmdd: int = 0
-    ) -> dict:
+    ) -> dict[str, Any]:
         """获取指定日期专业财务数据.
 
         对应 TDX SDK: tq.get_financial_data_by_date(
@@ -520,7 +520,7 @@ class TDXAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get financial data by date: {e}") from e
 
-    async def get_gp_one_data(self, stock_list: list[str], field_list: list[str]) -> dict:
+    async def get_gp_one_data(self, stock_list: list[str], field_list: list[str]) -> dict[str, Any]:
         """获取股票单个数据.
 
         对应 TDX SDK: tq.get_gp_one_data(stock_list, field_list)
@@ -539,7 +539,7 @@ class TDXAdapter(MarketDataAdapter):
 
     async def get_bkjy_value(
         self, stock_list: list[str], field_list: list[str], start_time: str = "", end_time: str = ""
-    ) -> dict:
+    ) -> dict[str, Any]:
         """获取板块交易数据.
 
         对应 TDX SDK: tq.get_bkjy_value(
@@ -568,7 +568,7 @@ class TDXAdapter(MarketDataAdapter):
 
     async def get_bkjy_value_by_date(
         self, stock_list: list[str], field_list: list[str], year: int = 0, mmdd: int = 0
-    ) -> dict:
+    ) -> dict[str, Any]:
         """获取指定日期板块交易数据.
 
         对应 TDX SDK: tq.get_bkjy_value_by_date(
@@ -597,7 +597,7 @@ class TDXAdapter(MarketDataAdapter):
 
     async def get_gpjy_value(
         self, stock_list: list[str], field_list: list[str], start_time: str = "", end_time: str = ""
-    ) -> dict:
+    ) -> dict[str, Any]:
         """获取股票交易数据.
 
         对应 TDX SDK: tq.get_gpjy_value(
@@ -626,7 +626,7 @@ class TDXAdapter(MarketDataAdapter):
 
     async def get_gpjy_value_by_date(
         self, stock_list: list[str], field_list: list[str], year: int = 0, mmdd: int = 0
-    ) -> dict:
+    ) -> dict[str, Any]:
         """获取指定日期股票交易数据.
 
         对应 TDX SDK: tq.get_gpjy_value_by_date(
@@ -653,7 +653,7 @@ class TDXAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get gpjy value by date: {e}") from e
 
-    async def get_scjy_value(self, field_list: list[str], start_time: str = "", end_time: str = "") -> dict:
+    async def get_scjy_value(self, field_list: list[str], start_time: str = "", end_time: str = "") -> dict[str, Any]:
         """获取市场交易数据.
 
         对应 TDX SDK: tq.get_scjy_value(field_list, start_time, end_time)
@@ -671,7 +671,7 @@ class TDXAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get scjy value: {e}") from e
 
-    async def get_scjy_value_by_date(self, field_list: list[str], year: int = 0, mmdd: int = 0) -> dict:
+    async def get_scjy_value_by_date(self, field_list: list[str], year: int = 0, mmdd: int = 0) -> dict[str, Any]:
         """获取指定日期市场交易数据.
 
         对应 TDX SDK: tq.get_scjy_value_by_date(field_list, year, mmdd)
@@ -707,7 +707,7 @@ class TDXAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get sector list: {e}") from e
 
-    async def get_user_sector(self) -> list:
+    async def get_user_sector(self) -> list[Any]:
         """获取自定义板块列表.
 
         对应 TDX SDK: tq.get_user_sector()
@@ -721,7 +721,7 @@ class TDXAdapter(MarketDataAdapter):
             raise AdapterError(f"Failed to get user sector: {e}") from e
 
     # TODO: 以下板块管理方法待后续实现
-    async def create_sector(self, block_code: str = "", block_name: str = "") -> dict:
+    async def create_sector(self, block_code: str = "", block_name: str = "") -> dict[str, Any]:
         """创建自定义板块.
 
         对应 TDX SDK: tq.create_sector(block_code, block_name)
@@ -735,7 +735,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("create_sector not yet implemented")
 
-    async def delete_sector(self, block_code: str = "") -> dict:
+    async def delete_sector(self, block_code: str = "") -> dict[str, Any]:
         """删除自定义板块.
 
         对应 TDX SDK: tq.delete_sector(block_code)
@@ -748,7 +748,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("delete_sector not yet implemented")
 
-    async def rename_sector(self, block_code: str = "", block_name: str = "") -> dict:
+    async def rename_sector(self, block_code: str = "", block_name: str = "") -> dict[str, Any]:
         """重命名自定义板块.
 
         对应 TDX SDK: tq.rename_sector(block_code, block_name)
@@ -762,7 +762,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("rename_sector not yet implemented")
 
-    async def clear_sector(self, block_code: str = "") -> dict:
+    async def clear_sector(self, block_code: str = "") -> dict[str, Any]:
         """清空自定义板块成份股.
 
         对应 TDX SDK: tq.clear_sector(block_code)
@@ -835,7 +835,7 @@ class TDXAdapter(MarketDataAdapter):
 
     # ---- Subscription Methods ----
 
-    async def subscribe_hq(self, stock_list: list[str], callback: Any) -> dict:
+    async def subscribe_hq(self, stock_list: list[str], callback: Any) -> dict[str, Any]:
         """订阅股票实时更新.
 
         对应 TDX SDK: tq.subscribe_hq(stock_list, callback)
@@ -856,7 +856,7 @@ class TDXAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to subscribe hq: {e}") from e
 
-    async def unsubscribe_hq(self, stock_list: list[str] | None = None) -> dict:
+    async def unsubscribe_hq(self, stock_list: list[str] | None = None) -> dict[str, Any]:
         """取消订阅股票更新.
 
         对应 TDX SDK: tq.unsubscribe_hq(stock_list)
@@ -889,7 +889,7 @@ class TDXAdapter(MarketDataAdapter):
 
     # ---- Client Control ----
 
-    async def exec_to_tdx(self, cmd: str = "", param: str = "") -> dict:
+    async def exec_to_tdx(self, cmd: str = "", param: str = "") -> dict[str, Any]:
         """调用客户端功能接口.
 
         对应 TDX SDK: tq.exec_to_tdx(cmd, param)
@@ -916,7 +916,7 @@ class TDXAdapter(MarketDataAdapter):
         amount: int = 0,
         order_type: int = 0,
         price_type: int = 0,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """执行股票交易.
 
         对应 TDX SDK: tq.order_stock(account_id, stock_code, price, amount, order_type, price_type)
@@ -934,7 +934,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("order_stock not yet implemented")
 
-    async def cancel_order_stock(self, account_id: str = "", stock_code: str = "", order_id: str = "") -> dict:
+    async def cancel_order_stock(self, account_id: str = "", stock_code: str = "", order_id: str = "") -> dict[str, Any]:
         """取消股票委托.
 
         对应 TDX SDK: tq.cancel_order_stock(account_id, stock_code, order_id)
@@ -949,7 +949,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("cancel_order_stock not yet implemented")
 
-    async def query_stock_orders(self, account_id: str = "") -> list[dict]:
+    async def query_stock_orders(self, account_id: str = "") -> list[dict[str, Any]]:
         """查询股票委托.
 
         对应 TDX SDK: tq.query_stock_orders(account_id)
@@ -962,7 +962,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("query_stock_orders not yet implemented")
 
-    async def query_stock_positions(self, account_id: str = "") -> list[dict]:
+    async def query_stock_positions(self, account_id: str = "") -> list[dict[str, Any]]:
         """查询股票持仓.
 
         对应 TDX SDK: tq.query_stock_positions(account_id)
@@ -975,7 +975,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("query_stock_positions not yet implemented")
 
-    async def query_stock_asset(self, account_id: str = "") -> dict:
+    async def query_stock_asset(self, account_id: str = "") -> dict[str, Any]:
         """查询股票资产.
 
         对应 TDX SDK: tq.query_stock_asset(account_id)
@@ -988,7 +988,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("query_stock_asset not yet implemented")
 
-    async def stock_account(self, account_id: str = "") -> list:
+    async def stock_account(self, account_id: str = "") -> list[Any]:
         """查询股票账号.
 
         对应 TDX SDK: tq.stock_account(account_id)
@@ -1019,7 +1019,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("formula_format_data not yet implemented")
 
-    async def formula_set_data(self, data_dict: dict[str, Any] | None = None) -> dict:
+    async def formula_set_data(self, data_dict: dict[str, Any] | None = None) -> dict[str, Any]:
         """设置公式数据.
 
         对应 TDX SDK: tq.formula_set_data(data_dict)
@@ -1032,7 +1032,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("formula_set_data not yet implemented")
 
-    async def formula_set_data_info(self, data_dict: dict[str, Any] | None = None) -> dict:
+    async def formula_set_data_info(self, data_dict: dict[str, Any] | None = None) -> dict[str, Any]:
         """设置公式数据信息.
 
         对应 TDX SDK: tq.formula_set_data_info(data_dict)
@@ -1059,7 +1059,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("formula_get_data not yet implemented")
 
-    async def formula_zb(self, data_name: str = "", zbi: int = 0) -> dict:
+    async def formula_zb(self, data_name: str = "", zbi: int = 0) -> dict[str, Any]:
         """执行公式指标.
 
         对应 TDX SDK: tq.formula_zb(data_name, zbi)
@@ -1073,7 +1073,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("formula_zb not yet implemented")
 
-    async def formula_exp(self, exp: str = "", data_name: str = "") -> dict:
+    async def formula_exp(self, exp: str = "", data_name: str = "") -> dict[str, Any]:
         """执行公式表达式.
 
         对应 TDX SDK: tq.formula_exp(exp, data_name)
@@ -1087,7 +1087,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("formula_exp not yet implemented")
 
-    async def formula_xg(self, exp: str = "") -> list[dict]:
+    async def formula_xg(self, exp: str = "") -> list[dict[str, Any]]:
         """执行公式选股.
 
         对应 TDX SDK: tq.formula_xg(exp)
@@ -1124,7 +1124,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("formula_process not yet implemented")
 
-    async def formula_process_mul_xg(self, exp_list: list[str] | None = None) -> list[dict]:
+    async def formula_process_mul_xg(self, exp_list: list[str] | None = None) -> list[dict[str, Any]]:
         """批量执行公式选股.
 
         对应 TDX SDK: tq.formula_process_mul_xg(exp_list)
@@ -1137,7 +1137,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("formula_process_mul_xg not yet implemented")
 
-    async def formula_process_mul_zb(self, data_name_list: list[str] | None = None, zbi_list: list[int] | None = None) -> dict:
+    async def formula_process_mul_zb(self, data_name_list: list[str] | None = None, zbi_list: list[int] | None = None) -> dict[str, Any]:
         """批量执行公式指标.
 
         对应 TDX SDK: tq.formula_process_mul_zb(data_name_list, zbi_list)
@@ -1153,7 +1153,7 @@ class TDXAdapter(MarketDataAdapter):
 
     # ---- Client Communication Methods (TODO) ----
 
-    async def send_message(self, msg_str: str = "") -> dict:
+    async def send_message(self, msg_str: str = "") -> dict[str, Any]:
         """发送消息到通达信客户端.
 
         对应 TDX SDK: tq.send_message(msg_str)
@@ -1166,7 +1166,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("send_message not yet implemented")
 
-    async def send_file(self, file_path: str = "", msg_str: str = "") -> dict:
+    async def send_file(self, file_path: str = "", msg_str: str = "") -> dict[str, Any]:
         """发送文件到通达信客户端.
 
         对应 TDX SDK: tq.send_file(file_path, msg_str)
@@ -1180,7 +1180,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("send_file not yet implemented")
 
-    async def send_warn(self, warn_str: str = "") -> dict:
+    async def send_warn(self, warn_str: str = "") -> dict[str, Any]:
         """发送警告到通达信客户端.
 
         对应 TDX SDK: tq.send_warn(warn_str)
@@ -1193,7 +1193,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("send_warn not yet implemented")
 
-    async def send_bt_data(self, bt_data: Any = None) -> dict:
+    async def send_bt_data(self, bt_data: Any = None) -> dict[str, Any]:
         """发送回测数据到通达信客户端.
 
         对应 TDX SDK: tq.send_bt_data(bt_data)
@@ -1206,7 +1206,7 @@ class TDXAdapter(MarketDataAdapter):
         """
         raise NotImplementedError("send_bt_data not yet implemented")
 
-    async def print_to_tdx(self, msg_str: str = "") -> dict:
+    async def print_to_tdx(self, msg_str: str = "") -> dict[str, Any]:
         """打印消息到通达信客户端.
 
         对应 TDX SDK: tq.print_to_tdx(msg_str)

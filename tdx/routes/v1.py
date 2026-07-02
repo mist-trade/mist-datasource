@@ -1,5 +1,6 @@
+from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Request
@@ -41,7 +42,7 @@ from src.datasource.tdx_models import (
     TdxTrackingEtfsQueryRequest,
     TdxTradingDatesQueryRequest,
 )
-from src.datasource.tdx_provider import TdxFormulaRequestLimitError
+from src.datasource.tdx_provider import TdxDatasourceProvider, TdxFormulaRequestLimitError
 from tdx.routes.dependencies import get_tdx_provider
 
 router = APIRouter()
@@ -69,13 +70,13 @@ class FormulaCallRequest(TdxV1Model):
     context: dict[str, Any] = Field(default_factory=dict)
 
 
-def _payload_alias(payload: Any) -> dict[str, Any]:
+def _payload_alias(payload: BaseModel) -> dict[str, Any]:
     data = payload.model_dump(by_alias=True)
     data.pop("provider", None)
     return data
 
 
-def _get_provider(request: Request) -> Any:
+def _get_provider(request: Request) -> TdxDatasourceProvider | None:
     return get_tdx_provider(request)
 
 
@@ -84,16 +85,16 @@ def _request_id(request: Request) -> str:
 
 
 def _meta() -> ResponseMeta:
-    return ResponseMeta(transport="http", asOf=datetime.now(BEIJING_TZ))
+    return ResponseMeta(transport="http", asOf=datetime.now(BEIJING_TZ).isoformat())
 
 
 def _dump(value: Any) -> Any:
     if hasattr(value, "model_dump"):
         return value.model_dump(by_alias=True)
     if isinstance(value, list):
-        return [_dump(item) for item in value]
+        return [_dump(item) for item in cast(list[Any], value)]
     if isinstance(value, dict):
-        return {key: _dump(item) for key, item in value.items()}
+        return {str(key): _dump(item) for key, item in cast(dict[Any, Any], value).items()}
     return value
 
 
@@ -124,11 +125,12 @@ def _to_datasource_error(exc: Exception) -> DatasourceError:
     retryable = getattr(exc, "retryable", None)
     details = getattr(exc, "details", None)
     if code and message is not None and retryable is not None:
+        error_details = cast(dict[str, Any], details) if isinstance(details, dict) else {}
         return DatasourceError(
             code=str(code),
             message=str(message),
             retryable=bool(retryable),
-            details=details if isinstance(details, dict) else {},
+            details=error_details,
         )
 
     return DatasourceError(
@@ -148,7 +150,7 @@ def _provider_unavailable(provider: str) -> DatasourceError:
     )
 
 
-async def _wrap(key: str, awaitable) -> dict[str, Any]:
+async def _wrap(key: str, awaitable: Awaitable[Any]) -> dict[str, Any]:
     return {key: await awaitable}
 
 
@@ -197,12 +199,12 @@ def _validate_formula_limits(payload: Any) -> None:
 
 async def _call_provider(
     request: Request,
-    operation,
+    operation: Callable[[TdxDatasourceProvider], Awaitable[Any]],
     *,
     provider_id: str = "tdx",
     capability_family: str,
     operation_name: str,
-):
+) -> ResponseEnvelope:
     if provider_id != "tdx":
         return _failure(
             request,
@@ -390,7 +392,7 @@ async def query_ipo_info(payload: TdxIpoInfoQueryRequest, request: Request):
 
 @router.post("/v1/reference/share-capital/query")
 async def query_share_capital(payload: TdxShareCapitalQueryRequest, request: Request):
-    async def operation(provider):
+    async def operation(provider: TdxDatasourceProvider):
         if payload.start_date or payload.end_date:
             return await _wrap(
                 "items",
@@ -655,7 +657,7 @@ async def query_market_trade_aggregate_by_date(
 
 @router.post("/v1/formulas/data/format/query")
 async def query_formula_format_data(payload: TdxFormulaFormatDataRequest, request: Request):
-    async def operation(provider):
+    async def operation(provider: TdxDatasourceProvider):
         _validate_formula_limits(payload)
         return await _wrap(
             "items",
@@ -673,7 +675,7 @@ async def query_formula_format_data(payload: TdxFormulaFormatDataRequest, reques
 
 @router.post("/v1/formulas/data/set")
 async def set_formula_data(payload: TdxFormulaSetDataRequest, request: Request):
-    async def operation(provider):
+    async def operation(provider: TdxDatasourceProvider):
         _validate_formula_limits(payload)
         return await _wrap("result", provider.set_formula_data(_payload_alias(payload)))
 
@@ -688,7 +690,7 @@ async def set_formula_data(payload: TdxFormulaSetDataRequest, request: Request):
 
 @router.post("/v1/formulas/data/set-info")
 async def set_formula_data_info(payload: TdxFormulaSetDataInfoRequest, request: Request):
-    async def operation(provider):
+    async def operation(provider: TdxDatasourceProvider):
         _validate_formula_limits(payload)
         return await _wrap("result", provider.set_formula_data_info(_payload_alias(payload)))
 
@@ -703,7 +705,7 @@ async def set_formula_data_info(payload: TdxFormulaSetDataInfoRequest, request: 
 
 @router.post("/v1/formulas/data/query")
 async def query_formula_data(payload: TdxFormulaGetDataRequest, request: Request):
-    async def operation(provider):
+    async def operation(provider: TdxDatasourceProvider):
         _validate_formula_limits(payload)
         return await _wrap("item", provider.get_formula_data(payload.timeout_ms))
 
@@ -718,7 +720,7 @@ async def query_formula_data(payload: TdxFormulaGetDataRequest, request: Request
 
 @router.post("/v1/formulas/metadata/query")
 async def query_formula_metadata(payload: TdxFormulaMetadataQueryRequest, request: Request):
-    async def operation(provider):
+    async def operation(provider: TdxDatasourceProvider):
         _validate_formula_limits(payload)
         return await _wrap(
             "items",
@@ -739,7 +741,7 @@ async def query_formula_metadata_info(
     payload: TdxFormulaMetadataInfoQueryRequest,
     request: Request,
 ):
-    async def operation(provider):
+    async def operation(provider: TdxDatasourceProvider):
         _validate_formula_limits(payload)
         return await _wrap(
             "item",
@@ -766,7 +768,7 @@ async def _execute_formula_route(
     kind: str,
     operation_name: str,
 ):
-    async def operation(provider):
+    async def operation(provider: TdxDatasourceProvider):
         _validate_formula_limits(payload)
         return await _wrap(
             "result",
@@ -825,7 +827,7 @@ async def _execute_formula_batch_route(
     kind: str,
     operation_name: str,
 ):
-    async def operation(provider):
+    async def operation(provider: TdxDatasourceProvider):
         _validate_formula_limits(payload)
         return await _wrap("result", provider.execute_formula_batch(kind, _payload_alias(payload)))
 

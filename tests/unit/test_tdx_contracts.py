@@ -83,10 +83,12 @@ def test_tdx_requests_and_ws_messages_use_camel_case_aliases():
 
 
 def test_tdx_ws_message_uses_structured_meta_and_error_models():
-    message = TdxWsMessage(
-        type="error",
-        error={"code": "X", "message": "bad", "retryable": True, "details": {}},
-        meta={"transport": "ws", "asOf": "2026-06-26T10:00:00"},
+    message = TdxWsMessage.model_validate(
+        {
+            "type": "error",
+            "error": {"code": "X", "message": "bad", "retryable": True, "details": {}},
+            "meta": {"transport": "ws", "asOf": "2026-06-26T10:00:00"},
+        }
     )
 
     payload = message.model_dump()

@@ -16,14 +16,14 @@ from qmt.routes.sector import router as sector_router
 from qmt.routes.stock import router as stock_router
 from qmt.routes.ws import router as ws_router
 from src.adapter import create_qmt_adapter
-from src.adapter.base import MarketDataAdapter
+from src.adapter.base import QmtDataAdapter
 from src.core.config import settings
 from src.core.logging import setup_logging
 from src.ws.manager import ConnectionManager
 
 setup_logging()
 
-qmt_adapter: MarketDataAdapter | None = None
+qmt_adapter: QmtDataAdapter | None = None
 ws_manager = ConnectionManager()
 
 

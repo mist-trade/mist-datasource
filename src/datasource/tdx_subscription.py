@@ -4,7 +4,7 @@ import asyncio
 import json
 from collections.abc import Iterable
 from contextlib import suppress
-from typing import Any
+from typing import Any, cast
 
 from src.core.config import settings
 from src.core.logging import get_logger
@@ -243,7 +243,7 @@ def _dedupe_normalized(symbols: Iterable[str]) -> list[str]:
 
 def _parse_quote_payload(payload: Any) -> dict[str, Any] | None:
     if isinstance(payload, dict):
-        return payload
+        return cast(dict[str, Any], payload)
 
     if isinstance(payload, bytes | bytearray):
         try:
@@ -256,7 +256,7 @@ def _parse_quote_payload(payload: Any) -> dict[str, Any] | None:
             decoded = json.loads(payload)
         except json.JSONDecodeError:
             return None
-        return decoded if isinstance(decoded, dict) else None
+        return cast(dict[str, Any], decoded) if isinstance(decoded, dict) else None
 
     return None
 

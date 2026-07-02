@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from tdx.main import app
 
@@ -14,75 +15,92 @@ DEFAULT_JSON_PATH = ROOT / "docs" / "references" / "tdx-openapi.json"
 DEFAULT_SUMMARY_PATH = ROOT / "docs" / "references" / "tdx-openapi-summary.md"
 
 
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return cast(Mapping[str, Any], value) if isinstance(value, dict) else {}
+
+
+def _sequence(value: Any) -> list[Any]:
+    if isinstance(value, list | tuple):
+        return list(cast(list[Any] | tuple[Any, ...], value))
+    return []
+
+
 def _schema_name(schema: Any) -> str:
-    if not isinstance(schema, dict):
+    schema_mapping = _mapping(schema)
+    if not schema_mapping:
         return ""
-    ref = schema.get("$ref")
+    ref = schema_mapping.get("$ref")
     if isinstance(ref, str):
         return ref.rsplit("/", 1)[-1]
-    if "items" in schema:
-        item_name = _schema_name(schema["items"])
+    if "items" in schema_mapping:
+        item_name = _schema_name(schema_mapping["items"])
         return f"array[{item_name}]" if item_name else "array"
-    if "anyOf" in schema:
-        names = [_schema_name(item) for item in schema["anyOf"]]
+    if "anyOf" in schema_mapping:
+        names = [_schema_name(item) for item in _sequence(schema_mapping["anyOf"])]
         return " | ".join(name for name in names if name)
-    schema_type = schema.get("type")
-    return str(schema_type) if schema_type else json.dumps(schema, ensure_ascii=False, sort_keys=True)
+    schema_type = schema_mapping.get("type")
+    return str(schema_type) if schema_type else json.dumps(schema_mapping, ensure_ascii=False, sort_keys=True)
 
 
-def _request_body_schema(operation: dict[str, Any]) -> str:
-    content = operation.get("requestBody", {}).get("content", {})
-    json_content = content.get("application/json", {})
+def _request_body_schema(operation: Mapping[str, Any]) -> str:
+    request_body = _mapping(operation.get("requestBody"))
+    content = _mapping(request_body.get("content"))
+    json_content = _mapping(content.get("application/json"))
     return _schema_name(json_content.get("schema")) or "-"
 
 
-def _response_schemas(operation: dict[str, Any]) -> list[str]:
+def _response_schemas(operation: Mapping[str, Any]) -> list[str]:
     responses: list[str] = []
-    for status_code, response in operation.get("responses", {}).items():
-        content = response.get("content", {}) if isinstance(response, dict) else {}
-        json_content = content.get("application/json", {})
+    for status_code, response in _mapping(operation.get("responses")).items():
+        response_mapping = _mapping(response)
+        content = _mapping(response_mapping.get("content"))
+        json_content = _mapping(content.get("application/json"))
         schema_name = _schema_name(json_content.get("schema")) or "-"
         responses.append(f"{status_code}: {schema_name}")
     return responses or ["-"]
 
 
-def _parameters(operation: dict[str, Any]) -> list[str]:
+def _parameters(operation: Mapping[str, Any]) -> list[str]:
     rows: list[str] = []
-    for parameter in operation.get("parameters", []):
-        if not isinstance(parameter, dict):
+    for parameter in _sequence(operation.get("parameters")):
+        parameter_mapping = _mapping(parameter)
+        if not parameter_mapping:
             continue
-        name = parameter.get("name", "-")
-        location = parameter.get("in", "-")
-        required = parameter.get("required", False)
-        schema_name = _schema_name(parameter.get("schema", {})) or "-"
+        name = parameter_mapping.get("name", "-")
+        location = parameter_mapping.get("in", "-")
+        required = parameter_mapping.get("required", False)
+        schema_name = _schema_name(parameter_mapping.get("schema", {})) or "-"
         rows.append(f"{name} ({location}, {schema_name}, required={str(required).lower()})")
     return rows or ["-"]
 
 
 def build_summary(openapi: dict[str, Any]) -> str:
+    info = _mapping(openapi.get("info"))
+    paths = _mapping(openapi.get("paths"))
     lines = [
         "# TDX OpenAPI Summary",
         "",
-        f"Title: {openapi.get('info', {}).get('title', '-')}",
-        f"Version: {openapi.get('info', {}).get('version', '-')}",
+        f"Title: {info.get('title', '-')}",
+        f"Version: {info.get('version', '-')}",
         "",
         "Generated from `tdx.main:app.openapi()`.",
         "",
     ]
 
-    for path in sorted(openapi.get("paths", {})):
-        path_item = openapi["paths"][path]
+    for path in sorted(str(path) for path in paths):
+        path_item = _mapping(paths[path])
         for method in sorted(path_item):
-            operation = path_item[method]
-            if not isinstance(operation, dict):
+            operation = _mapping(path_item[method])
+            if not operation:
                 continue
             method_upper = method.upper()
+            tags = [str(tag) for tag in _sequence(operation.get("tags"))]
             lines.extend(
                 [
                     f"## {method_upper} {path}",
                     "",
                     f"- Operation ID: `{operation.get('operationId', '-')}`",
-                    f"- Tags: {', '.join(operation.get('tags', [])) or '-'}",
+                    f"- Tags: {', '.join(tags) or '-'}",
                     f"- Summary: {operation.get('summary', '-')}",
                     f"- Request Body: `{_request_body_schema(operation)}`",
                     f"- Parameters: {'; '.join(_parameters(operation))}",
@@ -91,7 +109,8 @@ def build_summary(openapi: dict[str, Any]) -> str:
                 ]
             )
 
-    schemas = sorted(openapi.get("components", {}).get("schemas", {}))
+    components = _mapping(openapi.get("components"))
+    schemas = sorted(str(schema) for schema in _mapping(components.get("schemas")))
     lines.extend(
         [
             "## Schemas",

@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import httpx
@@ -95,10 +95,15 @@ class TdxHttpClient:
                     "body": body,
                 },
             )
+        body_map = cast(dict[str, Any], body)
 
-        if "error" in body and body["error"] is not None:
-            error = body["error"]
-            message = error.get("message", str(error)) if isinstance(error, dict) else str(error)
+        if "error" in body_map and body_map["error"] is not None:
+            error = body_map["error"]
+            if isinstance(error, dict):
+                error_map = cast(dict[str, Any], error)
+                message = str(error_map.get("message", str(error_map)))
+            else:
+                message = str(error)
             retryable = _json_rpc_error_retryable(error)
             raise TdxHttpError(
                 code="TDX_HTTP_ERROR",
@@ -107,7 +112,7 @@ class TdxHttpClient:
                 details={"url": self.base_url, "method": method, "error": error},
             )
 
-        if "result" not in body:
+        if "result" not in body_map:
             raise TdxHttpError(
                 code="TDX_HTTP_ERROR",
                 message="TDX HTTP response body is missing JSON-RPC result",
@@ -116,11 +121,11 @@ class TdxHttpClient:
                     "url": self.base_url,
                     "method": method,
                     "reason": "missing_result",
-                    "body": body,
+                    "body": body_map,
                 },
             )
 
-        return body["result"]
+        return body_map["result"]
 
     async def aclose(self) -> None:
         if self._owns_http_client:
@@ -131,7 +136,8 @@ def _json_rpc_error_retryable(error: Any) -> bool:
     if not isinstance(error, dict):
         return True
 
-    error_code = error.get("code")
+    error_map = cast(dict[str, Any], error)
+    error_code = error_map.get("code")
     if error_code in JSON_RPC_STANDARD_ERROR_CODES:
         return False
     if isinstance(error_code, int) and -32099 <= error_code <= -32000:

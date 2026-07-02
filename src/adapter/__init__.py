@@ -1,12 +1,12 @@
 """Adapter factory for creating market data adapters."""
 
-from src.adapter.base import MarketDataAdapter
+from src.adapter.base import MarketDataAdapter, QmtDataAdapter, TdxDataAdapter
 from src.adapter.mock.qmt_mock import QMTMockAdapter
 from src.adapter.mock.tdx_mock import TDXMockAdapter
 from src.core.config import settings
 
 
-def create_tdx_adapter() -> MarketDataAdapter:
+def create_tdx_adapter() -> TdxDataAdapter:
     """根据运行环境创建 TDX 适配器.
 
     Returns:
@@ -25,7 +25,7 @@ def create_tdx_adapter() -> MarketDataAdapter:
         return TDXMockAdapter()
 
 
-def create_qmt_adapter(path: str = "", account_id: str = "") -> MarketDataAdapter:
+def create_qmt_adapter(path: str = "", account_id: str = "") -> QmtDataAdapter:
     """根据运行环境创建 QMT 适配器.
 
     Args:
@@ -55,4 +55,10 @@ def create_qmt_adapter(path: str = "", account_id: str = "") -> MarketDataAdapte
         return QMTMockAdapter(path, account_id)
 
 
-__all__ = ["MarketDataAdapter", "create_tdx_adapter", "create_qmt_adapter"]
+__all__ = [
+    "MarketDataAdapter",
+    "QmtDataAdapter",
+    "TdxDataAdapter",
+    "create_tdx_adapter",
+    "create_qmt_adapter",
+]

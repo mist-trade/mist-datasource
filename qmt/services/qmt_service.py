@@ -61,7 +61,7 @@ class QMTService:
     async def get_account_overview(self) -> dict[str, Any]:
         """获取账户概览信息.
 
-        组合调用 query_positions + query_stock_orders，返回账户持仓和委托信息.
+        组合调用 query_stock_positions + query_stock_orders，返回账户持仓和委托信息.
 
         Args:
             无
@@ -78,7 +78,7 @@ class QMTService:
             raise AdapterError("QMT adapter not initialized")
 
         try:
-            positions = await adapter.query_positions()
+            positions = await adapter.query_stock_positions()
             orders = await adapter.query_stock_orders()
 
             return {

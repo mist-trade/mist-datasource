@@ -64,7 +64,7 @@ class ResponseEnvelope(DatasourceModel):
     ) -> "ResponseEnvelope":
         return cls(
             ok=True,
-            request_id=request_id,
+            requestId=request_id,
             provider=provider,
             data=data,
             meta=meta,
@@ -82,7 +82,7 @@ class ResponseEnvelope(DatasourceModel):
     ) -> "ResponseEnvelope":
         return cls(
             ok=False,
-            request_id=request_id,
+            requestId=request_id,
             provider=provider,
             data=None,
             meta=meta,

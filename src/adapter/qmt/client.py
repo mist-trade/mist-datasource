@@ -10,6 +10,7 @@ The MiniQMT client must be running and logged in before using this adapter.
 """
 
 import asyncio
+import importlib
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -56,11 +57,9 @@ class QMTAdapter(MarketDataAdapter):
                 if sdk_dir not in sys.path:
                     sys.path.insert(0, sdk_dir)
 
-            from xtquant import xtdata
-
-            self._xtdata = xtdata
+            self._xtdata = importlib.import_module("xtquant.xtdata")
             self._loop = asyncio.get_running_loop()
-            self._quote_queue = asyncio.Queue()
+            self._quote_queue = asyncio.Queue[dict[str, Any]]()
 
         except ImportError as e:
             raise ImportError(
@@ -168,7 +167,7 @@ class QMTAdapter(MarketDataAdapter):
         """
         queue = self._quote_queue
         if queue is None:
-            queue = asyncio.Queue()
+            queue = asyncio.Queue[dict[str, Any]]()
             self._quote_queue = queue
         loop = asyncio.get_running_loop()
         self._loop = loop
@@ -259,7 +258,14 @@ class QMTAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get divid factors: {e}") from e
 
-    async def download_history_data(self, stock_code, period, start_time="", end_time="", incrementally=None):
+    async def download_history_data(
+        self,
+        stock_code: str,
+        period: str,
+        start_time: str = "",
+        end_time: str = "",
+        incrementally: bool | None = None,
+    ) -> None:
         try:
             await self._call_xtdata(
                 "download_history_data",
@@ -272,7 +278,13 @@ class QMTAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to download history data: {e}") from e
 
-    async def download_history_data2(self, stock_list, period, start_time="", end_time=""):
+    async def download_history_data2(
+        self,
+        stock_list: list[str],
+        period: str,
+        start_time: str = "",
+        end_time: str = "",
+    ) -> None:
         try:
             await self._call_xtdata("download_history_data2", stock_list, period, start_time, end_time)
         except Exception as e:
@@ -290,25 +302,30 @@ class QMTAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get trading dates: {e}") from e
 
-    async def get_trading_calendar(self, market, start_time="", end_time=""):
+    async def get_trading_calendar(
+        self,
+        market: str,
+        start_time: str = "",
+        end_time: str = "",
+    ) -> list[str]:
         try:
             return await self._call_xtdata("get_trading_calendar", market, start_time, end_time)
         except Exception as e:
             raise AdapterError(f"Failed to get trading calendar: {e}") from e
 
-    async def get_holidays(self):
+    async def get_holidays(self) -> list[str]:
         try:
             return await self._call_xtdata("get_holidays")
         except Exception as e:
             raise AdapterError(f"Failed to get holidays: {e}") from e
 
-    async def download_holiday_data(self):
+    async def download_holiday_data(self) -> None:
         try:
             await self._call_xtdata("download_holiday_data")
         except Exception as e:
             raise AdapterError(f"Failed to download holiday data: {e}") from e
 
-    async def get_period_list(self):
+    async def get_period_list(self) -> list[str]:
         try:
             return await self._call_xtdata("get_period_list")
         except Exception as e:
@@ -316,13 +333,17 @@ class QMTAdapter(MarketDataAdapter):
 
     # ---- 合约信息接口 (xtdata) ----
 
-    async def get_instrument_detail(self, stock_code, iscomplete=False):
+    async def get_instrument_detail(
+        self,
+        stock_code: str,
+        iscomplete: bool = False,
+    ) -> dict[str, Any] | None:
         try:
             return await self._call_xtdata("get_instrument_detail", stock_code, iscomplete)
         except Exception as e:
             raise AdapterError(f"Failed to get instrument detail: {e}") from e
 
-    async def get_instrument_type(self, stock_code):
+    async def get_instrument_type(self, stock_code: str) -> dict[str, Any] | None:
         try:
             return await self._call_xtdata("get_instrument_type", stock_code)
         except Exception as e:
@@ -350,13 +371,23 @@ class QMTAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get financial data: {e}") from e
 
-    async def download_financial_data(self, stock_list, table_list=None):
+    async def download_financial_data(
+        self,
+        stock_list: list[str],
+        table_list: list[str] | None = None,
+    ) -> None:
         try:
             await self._call_xtdata("download_financial_data", stock_list, table_list or [])
         except Exception as e:
             raise AdapterError(f"Failed to download financial data: {e}") from e
 
-    async def download_financial_data2(self, stock_list, table_list=None, start_time="", end_time=""):
+    async def download_financial_data2(
+        self,
+        stock_list: list[str],
+        table_list: list[str] | None = None,
+        start_time: str = "",
+        end_time: str = "",
+    ) -> None:
         try:
             await self._call_xtdata(
                 "download_financial_data2",
@@ -376,55 +407,65 @@ class QMTAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get sector list: {e}") from e
 
-    async def download_sector_data(self):
+    async def download_sector_data(self) -> None:
         try:
             await self._call_xtdata("download_sector_data")
         except Exception as e:
             raise AdapterError(f"Failed to download sector data: {e}") from e
 
-    async def get_index_weight(self, index_code):
+    async def get_index_weight(self, index_code: str) -> dict[str, Any]:
         try:
             return await self._call_xtdata("get_index_weight", index_code)
         except Exception as e:
             raise AdapterError(f"Failed to get index weight: {e}") from e
 
-    async def download_index_weight(self):
+    async def download_index_weight(self) -> None:
         try:
             await self._call_xtdata("download_index_weight")
         except Exception as e:
             raise AdapterError(f"Failed to download index weight: {e}") from e
 
-    async def create_sector_folder(self, parent_node, folder_name, overwrite=True):
+    async def create_sector_folder(
+        self,
+        parent_node: str,
+        folder_name: str,
+        overwrite: bool = True,
+    ) -> str:
         try:
             return await self._call_xtdata("create_sector_folder", parent_node, folder_name, overwrite)
         except Exception as e:
             raise AdapterError(f"Failed to create sector folder: {e}") from e
 
-    async def create_sector(self, parent_node="", sector_name="", overwrite=True):
+    async def create_sector(
+        self,
+        parent_node: str = "",
+        sector_name: str = "",
+        overwrite: bool = True,
+    ) -> str:
         try:
             return await self._call_xtdata("create_sector", parent_node, sector_name, overwrite)
         except Exception as e:
             raise AdapterError(f"Failed to create sector: {e}") from e
 
-    async def add_sector(self, sector_name, stock_list):
+    async def add_sector(self, sector_name: str, stock_list: list[str]) -> None:
         try:
             await self._call_xtdata("add_sector", sector_name, stock_list)
         except Exception as e:
             raise AdapterError(f"Failed to add sector: {e}") from e
 
-    async def remove_stock_from_sector(self, sector_name, stock_list):
+    async def remove_stock_from_sector(self, sector_name: str, stock_list: list[str]) -> bool:
         try:
             return await self._call_xtdata("remove_stock_from_sector", sector_name, stock_list)
         except Exception as e:
             raise AdapterError(f"Failed to remove stock from sector: {e}") from e
 
-    async def remove_sector(self, sector_name):
+    async def remove_sector(self, sector_name: str) -> None:
         try:
             await self._call_xtdata("remove_sector", sector_name)
         except Exception as e:
             raise AdapterError(f"Failed to remove sector: {e}") from e
 
-    async def reset_sector(self, sector_name, stock_list):
+    async def reset_sector(self, sector_name: str, stock_list: list[str]) -> bool:
         try:
             return await self._call_xtdata("reset_sector", sector_name, stock_list)
         except Exception as e:
@@ -438,7 +479,7 @@ class QMTAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get cb info: {e}") from e
 
-    async def download_cb_data(self):
+    async def download_cb_data(self) -> None:
         try:
             await self._call_xtdata("download_cb_data")
         except Exception as e:
@@ -460,7 +501,7 @@ class QMTAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get etf info: {e}") from e
 
-    async def download_etf_info(self):
+    async def download_etf_info(self) -> None:
         try:
             await self._call_xtdata("download_etf_info")
         except Exception as e:
@@ -468,68 +509,86 @@ class QMTAdapter(MarketDataAdapter):
 
     # ---- 交易存根 (XtTrader，待后续实现) ----
 
-    async def order_stock(self, stock_code, order_type, volume, price_type, price, strategy_name="", order_remark=""):
+    async def order_stock(
+        self,
+        stock_code: str,
+        order_type: int,
+        volume: int,
+        price_type: int,
+        price: float,
+        strategy_name: str = "",
+        order_remark: str = "",
+    ) -> int:
         raise NotImplementedError("order_stock not yet implemented")
 
-    async def order_stock_async(self, stock_code, order_type, volume, price_type, price, strategy_name="", order_remark=""):
+    async def order_stock_async(
+        self,
+        stock_code: str,
+        order_type: int,
+        volume: int,
+        price_type: int,
+        price: float,
+        strategy_name: str = "",
+        order_remark: str = "",
+    ) -> int:
         raise NotImplementedError("order_stock_async not yet implemented")
 
-    async def cancel_order_stock(self, order_id):
+    async def cancel_order_stock(self, order_id: int) -> int:
         raise NotImplementedError("cancel_order_stock not yet implemented")
 
-    async def cancel_order_stock_async(self, order_id):
+    async def cancel_order_stock_async(self, order_id: int) -> int:
         raise NotImplementedError("cancel_order_stock_async not yet implemented")
 
-    async def query_stock_asset(self):
+    async def query_stock_asset(self) -> dict[str, Any]:
         raise NotImplementedError("query_stock_asset not yet implemented")
 
-    async def query_stock_orders(self):
+    async def query_stock_orders(self) -> list[dict[str, Any]]:
         raise NotImplementedError("query_stock_orders not yet implemented")
 
-    async def query_stock_order(self, order_id):
+    async def query_stock_order(self, order_id: int) -> dict[str, Any]:
         raise NotImplementedError("query_stock_order not yet implemented")
 
-    async def query_stock_trades(self):
+    async def query_stock_trades(self) -> list[dict[str, Any]]:
         raise NotImplementedError("query_stock_trades not yet implemented")
 
-    async def query_stock_positions(self):
+    async def query_stock_positions(self) -> list[dict[str, Any]]:
         raise NotImplementedError("query_stock_positions not yet implemented")
 
-    async def query_stock_position(self, stock_code):
+    async def query_stock_position(self, stock_code: str) -> dict[str, Any]:
         raise NotImplementedError("query_stock_position not yet implemented")
 
-    async def fund_transfer(self, transfer_direction, price):
+    async def fund_transfer(self, transfer_direction: int, price: float) -> int:
         raise NotImplementedError("fund_transfer not yet implemented")
 
-    async def query_credit_detail(self):
+    async def query_credit_detail(self) -> dict[str, Any]:
         raise NotImplementedError("query_credit_detail not yet implemented")
 
-    async def query_stk_compacts(self):
+    async def query_stk_compacts(self) -> list[dict[str, Any]]:
         raise NotImplementedError("query_stk_compacts not yet implemented")
 
-    async def query_credit_subjects(self):
+    async def query_credit_subjects(self) -> list[dict[str, Any]]:
         raise NotImplementedError("query_credit_subjects not yet implemented")
 
-    async def query_credit_slo_code(self):
+    async def query_credit_slo_code(self) -> list[str]:
         raise NotImplementedError("query_credit_slo_code not yet implemented")
 
-    async def query_credit_assure(self):
+    async def query_credit_assure(self) -> dict[str, Any]:
         raise NotImplementedError("query_credit_assure not yet implemented")
 
-    async def query_account_infos(self):
+    async def query_account_infos(self) -> list[dict[str, Any]]:
         raise NotImplementedError("query_account_infos not yet implemented")
 
-    async def query_account_status(self):
+    async def query_account_status(self) -> dict[str, Any]:
         raise NotImplementedError("query_account_status not yet implemented")
 
-    async def query_new_purchase_limit(self):
+    async def query_new_purchase_limit(self) -> dict[str, Any]:
         raise NotImplementedError("query_new_purchase_limit not yet implemented")
 
-    async def query_ipo_data(self):
+    async def query_ipo_data(self) -> list[dict[str, Any]]:
         raise NotImplementedError("query_ipo_data not yet implemented")
 
-    async def query_com_fund(self):
+    async def query_com_fund(self) -> dict[str, Any]:
         raise NotImplementedError("query_com_fund not yet implemented")
 
-    async def query_com_position(self):
+    async def query_com_position(self) -> list[dict[str, Any]]:
         raise NotImplementedError("query_com_position not yet implemented")

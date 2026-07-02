@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from src.datasource.contracts import BEIJING_TZ, normalize_beijing_iso
 from src.datasource.tdx_models import TdxBar, TdxSnapshot
@@ -76,7 +76,7 @@ def normalize_tdx_bar_rows(symbol: str, period: str, native: dict[str, Any]) -> 
     vol_in_stock_values = _series_for_symbol(native, "VolInStock", normalized_symbol)
 
     timestamps = sorted(
-        set().union(
+        set[str]().union(
             open_values,
             high_values,
             low_values,
@@ -143,10 +143,11 @@ def _series_for_symbol(
         return _dataframe_row_for_symbol(field_map, candidate_keys)
 
     if isinstance(field_map, dict):
+        field_mapping = cast(dict[str, Any], field_map)
         for key in candidate_keys:
-            values = field_map.get(key)
+            values = field_mapping.get(key)
             if isinstance(values, dict):
-                return values
+                return cast(dict[str, Any], values)
 
     symbol_values = _symbol_values_from_symbol_wrapper(native, candidate_keys)
     if isinstance(symbol_values, dict):
@@ -170,7 +171,7 @@ def _dataframe_row_for_symbol(field_value: Any, candidate_keys: tuple[str, ...])
             continue
         row = field_value.loc[key]
         if hasattr(row, "to_dict"):
-            return row.to_dict()
+            return cast(dict[str, Any], row.to_dict())
         return dict(row)
     return {}
 
@@ -179,12 +180,12 @@ def _symbol_values_from_symbol_wrapper(native: dict[str, Any], candidate_keys: t
     for key in candidate_keys:
         values = native.get(key)
         if isinstance(values, dict):
-            return values
+            return cast(dict[str, Any], values)
 
     normalized_candidates = {key.upper() for key in candidate_keys}
     for key, values in native.items():
         if str(key).upper() in normalized_candidates and isinstance(values, dict):
-            return values
+            return cast(dict[str, Any], values)
 
     return None
 
@@ -193,16 +194,17 @@ def _symbol_values_from_value_wrapper(native: dict[str, Any], candidate_keys: tu
     value_wrapper = _get_native_value(native, "value")
     if not isinstance(value_wrapper, dict):
         return None
+    value_mapping = cast(dict[str, Any], value_wrapper)
 
     for key in candidate_keys:
-        values = value_wrapper.get(key)
+        values = value_mapping.get(key)
         if isinstance(values, dict):
-            return values
+            return cast(dict[str, Any], values)
 
     normalized_candidates = {key.upper() for key in candidate_keys}
-    for key, values in value_wrapper.items():
+    for key, values in value_mapping.items():
         if str(key).upper() in normalized_candidates and isinstance(values, dict):
-            return values
+            return cast(dict[str, Any], values)
 
     return None
 
@@ -211,12 +213,13 @@ def _array_series_for_field(symbol_values: dict[str, Any], field_name: str) -> d
     field_values = _get_native_value(symbol_values, field_name)
     if not isinstance(field_values, list | tuple):
         return {}
+    field_sequence = cast(list[Any] | tuple[Any, ...], field_values)
 
     dates = _as_sequence(_get_native_value(symbol_values, "date"))
     times = _as_sequence(_get_native_value(symbol_values, "time"))
 
     series: dict[str, Any] = {}
-    for index, value in enumerate(field_values):
+    for index, value in enumerate(field_sequence):
         timestamp = _tdx_array_timestamp(_value_at(dates, index), _value_at(times, index))
         if timestamp:
             series[timestamp] = value
@@ -225,7 +228,7 @@ def _array_series_for_field(symbol_values: dict[str, Any], field_name: str) -> d
 
 def _as_sequence(value: Any) -> list[Any]:
     if isinstance(value, list | tuple):
-        return list(value)
+        return list(cast(list[Any] | tuple[Any, ...], value))
     return []
 
 
@@ -259,7 +262,3 @@ def _tdx_array_timestamp(date_value: Any, time_value: Any) -> str | None:
 
 def _get_native_value(native: dict[str, Any], field_name: str) -> Any:
     return native_value(native, field_name)
-
-
-def _native_key_token(value: str) -> str:
-    return normalize_native_key(value)

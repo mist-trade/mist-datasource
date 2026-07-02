@@ -26,3 +26,29 @@ async def test_get_sector_overview():
     finally:
         qmt.main.qmt_adapter = original_adapter
         await adapter.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_get_account_overview_uses_stock_position_interface():
+    """Test account overview calls the adapter's stock-position API."""
+
+    class AccountAdapter:
+        async def query_stock_positions(self):
+            return [{"symbol": "600519.SH"}]
+
+        async def query_stock_orders(self):
+            return [{"orderId": 1}]
+
+    service = QMTService()
+    original_adapter = qmt.main.qmt_adapter
+    qmt.main.qmt_adapter = AccountAdapter()
+
+    try:
+        overview = await service.get_account_overview()
+
+        assert overview["positions"] == [{"symbol": "600519.SH"}]
+        assert overview["position_count"] == 1
+        assert overview["orders"] == [{"orderId": 1}]
+        assert overview["order_count"] == 1
+    finally:
+        qmt.main.qmt_adapter = original_adapter

@@ -6,13 +6,13 @@
 
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.adapter import create_tdx_adapter
-from src.adapter.base import MarketDataAdapter
+from src.adapter.base import TdxDataAdapter
 from src.core.config import settings
 from src.core.logging import setup_logging
 from src.datasource.tdx_bridge import TdxBridge
@@ -34,14 +34,14 @@ from tdx.routes.ws import router as ws_router
 
 setup_logging()
 
-tdx_adapter: MarketDataAdapter | None = None
+tdx_adapter: TdxDataAdapter | None = None
 tdx_provider: TdxDatasourceProvider | None = None
 tdx_bridge: Any | None = None
 tdx_collector: Any | None = None
 tdx_subscription_client: Any | None = None
 ws_manager = ConnectionManager()
 _tdx_provider_owned_by_main: TdxDatasourceProvider | None = None
-_tdx_adapter_owned_by_main: MarketDataAdapter | None = None
+_tdx_adapter_owned_by_main: TdxDataAdapter | None = None
 _tdx_bridge_owned_by_main: Any | None = None
 _tdx_collector_owned_by_main: Any | None = None
 _tdx_subscription_client_owned_by_main: Any | None = None
@@ -241,11 +241,6 @@ async def _tdx_provider_health() -> dict[str, Any]:
 
     try:
         health_status = await tdx_provider.health()
-        if not isinstance(health_status, Mapping):
-            return {
-                "tdxHttpReachable": False,
-                "lastError": "TDX provider health returned non-mapping status",
-            }
         return {
             "tdxHttpReachable": bool(health_status.get("tdxHttpReachable", False)),
             "lastError": health_status.get("lastError"),
@@ -279,33 +274,34 @@ def _tdx_bridge_health() -> dict[str, Any]:
     if hasattr(tdx_bridge, "health"):
         health_status = tdx_bridge.health()
         if isinstance(health_status, Mapping):
+            bridge_health = cast(Mapping[str, Any], health_status)
             return {
-                "subscribedCount": _read_mapping_int(health_status, "subscribed_count", 0),
+                "subscribedCount": _read_mapping_int(bridge_health, "subscribed_count", 0),
                 "activeSubscriptions": _read_mapping_list(
-                    health_status,
+                    bridge_health,
                     "active_subscriptions",
                 ),
-                "lastCallbackAt": health_status.get("last_callback_at"),
-                "lastMinuteBarAt": health_status.get("last_minute_bar_at"),
+                "lastCallbackAt": bridge_health.get("last_callback_at"),
+                "lastMinuteBarAt": bridge_health.get("last_minute_bar_at"),
                 "quoteCallbackCount": _read_mapping_int(
-                    health_status,
+                    bridge_health,
                     "quote_callback_count",
                     0,
                 ),
                 "quoteCallbackRejectedCount": _read_mapping_int(
-                    health_status,
+                    bridge_health,
                     "quote_callback_rejected_count",
                     0,
                 ),
-                "lastQuoteCallbackAt": health_status.get("last_quote_callback_at"),
-                "lastQuoteCallbackCode": health_status.get("last_quote_callback_code"),
-                "lastQuoteCallbackSymbol": health_status.get("last_quote_callback_symbol"),
-                "lastQuoteCallbackAccepted": health_status.get("last_quote_callback_accepted"),
-                "lastQuoteCallbackRejectReason": health_status.get(
+                "lastQuoteCallbackAt": bridge_health.get("last_quote_callback_at"),
+                "lastQuoteCallbackCode": bridge_health.get("last_quote_callback_code"),
+                "lastQuoteCallbackSymbol": bridge_health.get("last_quote_callback_symbol"),
+                "lastQuoteCallbackAccepted": bridge_health.get("last_quote_callback_accepted"),
+                "lastQuoteCallbackRejectReason": bridge_health.get(
                     "last_quote_callback_reject_reason"
                 ),
-                "eventQueueDepth": _read_mapping_int(health_status, "event_queue_depth", 0),
-                "eventQueueCapacity": _read_mapping_int(health_status, "event_queue_capacity", 0),
+                "eventQueueDepth": _read_mapping_int(bridge_health, "event_queue_depth", 0),
+                "eventQueueCapacity": _read_mapping_int(bridge_health, "event_queue_capacity", 0),
             }
 
     return {
@@ -375,7 +371,7 @@ def _read_int(source: Any | None, name: str, default: int) -> int:
 
 def _read_list(source: Any | None, name: str) -> list[Any]:
     value = _read_attr(source, name, [])
-    return list(value) if isinstance(value, list | tuple) else []
+    return list(cast(list[Any] | tuple[Any, ...], value)) if isinstance(value, list | tuple) else []
 
 
 def _read_mapping_int(source: Mapping[str, Any], name: str, default: int) -> int:
@@ -385,7 +381,7 @@ def _read_mapping_int(source: Mapping[str, Any], name: str, default: int) -> int
 
 def _read_mapping_list(source: Mapping[str, Any], name: str) -> list[Any]:
     value = source.get(name, [])
-    return list(value) if isinstance(value, list | tuple) else []
+    return list(cast(list[Any] | tuple[Any, ...], value)) if isinstance(value, list | tuple) else []
 
 
 async def _publish_collector_snapshot(snapshot: TdxSnapshot) -> None:

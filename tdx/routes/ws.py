@@ -29,7 +29,7 @@
 import json
 from contextlib import suppress
 from json import JSONDecodeError
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -59,9 +59,12 @@ def _get_bridge(websocket: WebSocket) -> TdxBridge:
 
 def _message_symbols(message: dict[str, Any]) -> list[str] | None:
     symbols = message.get("symbols", message.get("stocks", []))
-    if not isinstance(symbols, list) or not all(isinstance(symbol, str) for symbol in symbols):
+    if not isinstance(symbols, list):
         return None
-    return symbols
+    symbol_list = cast(list[Any], symbols)
+    if not all(isinstance(symbol, str) for symbol in symbol_list):
+        return None
+    return cast(list[str], symbol_list)
 
 
 def _is_leader(bridge: TdxBridge, client_id: str) -> bool:

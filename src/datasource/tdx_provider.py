@@ -1,6 +1,6 @@
 import asyncio
 import re
-from typing import Any
+from typing import Any, cast
 
 from src.core.config import settings
 from src.datasource.tdx_http_client import TdxHttpClient
@@ -95,11 +95,12 @@ class TdxSymbolNotFoundError(Exception):
 
 
 def _raise_for_native_error(native: Any) -> None:
-    if not isinstance(native, dict):
+    native_mapping = _native_mapping(native)
+    if native_mapping is None:
         return
-    error_id = native.get("ErrorId")
+    error_id = native_mapping.get("ErrorId")
     if error_id is not None and str(error_id) != "0":
-        raise TdxNativeError(native)
+        raise TdxNativeError(native_mapping)
 
 
 def _effective_formula_timeout_ms(timeout_ms: int | None = None) -> int:
@@ -218,18 +219,18 @@ class TdxDatasourceProvider:
             },
         )
         values = _unwrap_tdx_value(native)
-        if isinstance(values, dict):
-            values = _first_native_value(values, "Date", "date", "tradingDates", "dates")
-        if isinstance(values, list | tuple):
-            return [_normalize_trading_date(value) for value in values]
+        values_mapping = _native_mapping(values)
+        if values_mapping is not None:
+            values = _first_native_value(values_mapping, "Date", "date", "tradingDates", "dates")
+        values_sequence = _native_sequence(values)
+        if values_sequence:
+            return [_normalize_trading_date(value) for value in values_sequence]
         return []
 
     async def get_securities(self, market: str = "5") -> list[dict[str, Any]]:
         native = await self.client.call("get_stock_list", {"market": market, "list_type": 1})
         values = _unwrap_tdx_value(native)
-        if not isinstance(values, list | tuple):
-            return []
-        return [_normalize_security_item(item) for item in values]
+        return [_normalize_security_item(item) for item in _native_sequence(values)]
 
     async def get_security_info(self, symbols: list[str]) -> list[dict[str, Any]]:
         securities: list[dict[str, Any]] = []
@@ -584,7 +585,7 @@ class TdxDatasourceProvider:
         timeout_ms: int | None = None,
     ) -> dict[str, Any]:
         method = _formula_execution_method(kind)
-        params = {
+        params: dict[str, Any] = {
             "formula_name": formula_name,
             "formula_arg": formula_arg,
         }
@@ -642,9 +643,7 @@ class TdxDatasourceProvider:
     async def get_sector_list(self, list_type: int = 0) -> list[dict[str, Any]]:
         native = await self.client.call("get_sector_list", {"list_type": list_type})
         values = _unwrap_tdx_value(native)
-        if not isinstance(values, list | tuple):
-            return []
-        return [_normalize_sector_item(item) for item in values]
+        return [_normalize_sector_item(item) for item in _native_sequence(values)]
 
     async def get_sector_members(self, sector: str) -> list[str]:
         native = await self.client.call(
@@ -654,9 +653,7 @@ class TdxDatasourceProvider:
             },
         )
         members = _unwrap_tdx_value(native)
-        if not isinstance(members, list | tuple):
-            return []
-        return [normalize_symbol(str(symbol)) for symbol in members]
+        return [normalize_symbol(str(symbol)) for symbol in _native_sequence(members)]
 
     async def call_formula(
         self,
@@ -697,12 +694,29 @@ class TdxDatasourceProvider:
 
 
 def _unwrap_tdx_value(native: Any) -> Any:
-    if not isinstance(native, dict):
+    native_mapping = _native_mapping(native)
+    if native_mapping is None:
         return native
-    for key, value in native.items():
+    for key, value in native_mapping.items():
         if normalize_native_key(key) == "value":
             return value
-    return native
+    return native_mapping
+
+
+def _native_mapping(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        return cast(dict[str, Any], value)
+    return None
+
+
+def _native_sequence(value: Any) -> list[Any]:
+    if isinstance(value, list | tuple):
+        return list(cast(list[Any] | tuple[Any, ...], value))
+    return []
+
+
+def _native_record(value: Any) -> dict[str, Any]:
+    return _native_mapping(value) or {"value": value}
 
 
 def _normalize_trading_date(value: Any) -> str:
@@ -713,23 +727,25 @@ def _normalize_trading_date(value: Any) -> str:
 
 
 def _normalize_security_item(item: Any) -> dict[str, Any]:
-    if isinstance(item, dict):
-        symbol = _first_native_value(item, "symbol", "code", "stock_code", "Code")
-        name = _first_native_value(item, "name", "Name", "stock_name")
+    item_mapping = _native_mapping(item)
+    if item_mapping is not None:
+        symbol = _first_native_value(item_mapping, "symbol", "code", "stock_code", "Code")
+        name = _first_native_value(item_mapping, "name", "Name", "stock_name")
         return {
             "symbol": normalize_symbol(str(symbol)) if symbol else "",
             "name": str(name) if name is not None else None,
             "provider": "tdx",
             "raw": item,
         }
-    if isinstance(item, list | tuple):
-        symbol = str(item[0]) if item else ""
-        name = str(item[1]) if len(item) > 1 else None
+    item_sequence = _native_sequence(item)
+    if item_sequence:
+        symbol = str(item_sequence[0])
+        name = str(item_sequence[1]) if len(item_sequence) > 1 else None
         return {
             "symbol": normalize_symbol(symbol),
             "name": name,
             "provider": "tdx",
-            "raw": list(item),
+            "raw": item_sequence,
         }
     return {
         "symbol": normalize_symbol(str(item)),
@@ -747,8 +763,8 @@ def _normalize_security_info(
         "stockInfo": stock_info,
         "moreInfo": more_info,
     }
-    stock_info_dict = stock_info if isinstance(stock_info, dict) else {}
-    more_info_dict = more_info if isinstance(more_info, dict) else {}
+    stock_info_dict = _native_mapping(stock_info) or {}
+    more_info_dict = _native_mapping(more_info) or {}
     name = _first_native_value(stock_info_dict, "name", "Name", "stock_name")
     market = _first_native_value(stock_info_dict, "market", "Market")
     if market is None:
@@ -765,21 +781,23 @@ def _normalize_security_info(
 
 
 def _normalize_sector_item(item: Any) -> dict[str, Any]:
-    if isinstance(item, dict):
-        code = _first_native_value(item, "code", "Code", "block_code", "BlockCode")
-        name = _first_native_value(item, "name", "Name", "block_name", "BlockName")
+    item_mapping = _native_mapping(item)
+    if item_mapping is not None:
+        code = _first_native_value(item_mapping, "code", "Code", "block_code", "BlockCode")
+        name = _first_native_value(item_mapping, "name", "Name", "block_name", "BlockName")
         return {
             "code": str(code) if code is not None else "",
             "name": str(name) if name is not None else None,
             "provider": "tdx",
             "raw": item,
         }
-    if isinstance(item, list | tuple):
+    item_sequence = _native_sequence(item)
+    if item_sequence:
         return {
-            "code": str(item[0]) if item else "",
-            "name": str(item[1]) if len(item) > 1 else None,
+            "code": str(item_sequence[0]),
+            "name": str(item_sequence[1]) if len(item_sequence) > 1 else None,
             "provider": "tdx",
-            "raw": list(item),
+            "raw": item_sequence,
         }
     return {
         "code": str(item),
@@ -791,7 +809,7 @@ def _normalize_sector_item(item: Any) -> dict[str, Any]:
 def _normalize_price_volume_item(symbol: str, native: Any) -> dict[str, Any]:
     normalized_symbol = normalize_symbol(symbol)
     native_item = _native_item_for_symbol(native, normalized_symbol)
-    native_dict = native_item if isinstance(native_item, dict) else {}
+    native_dict = _native_mapping(native_item) or {}
     return {
         "symbol": normalized_symbol,
         "price": _optional_float(_first_native_value(native_dict, "price", "now", "Now", "last")),
@@ -806,16 +824,17 @@ def _normalize_relation_items(symbol: str, native: Any) -> list[dict[str, Any]]:
     values = _unwrap_tdx_value(native)
     relations: list[dict[str, Any]] = []
 
-    if isinstance(values, dict):
-        sector_values = _first_native_value(values, "RelatedSectors", "sectors", "sector_list")
-        stock_values = _first_native_value(values, "RelatedStocks", "stocks", "stock_list")
+    values_mapping = _native_mapping(values)
+    if values_mapping is not None:
+        sector_values = _first_native_value(values_mapping, "RelatedSectors", "sectors", "sector_list")
+        stock_values = _first_native_value(values_mapping, "RelatedStocks", "stocks", "stock_list")
         if sector_values is not None or stock_values is not None:
             relations.extend(
                 _normalize_relation_group(symbol, "sector", _as_sequence(sector_values))
             )
             relations.extend(_normalize_relation_group(symbol, "stock", _as_sequence(stock_values)))
             return relations
-        return [_normalize_relation_item(symbol, values, "unknown")]
+        return [_normalize_relation_item(symbol, values_mapping, "unknown")]
 
     return _normalize_relation_group(symbol, "unknown", _as_sequence(values))
 
@@ -834,10 +853,11 @@ def _normalize_relation_item(
     default_category: str,
 ) -> dict[str, Any]:
     normalized_symbol = normalize_symbol(symbol)
-    if isinstance(item, dict):
-        code = _first_native_value(item, "code", "Code", "block_code", "stock_code")
-        name = _first_native_value(item, "name", "Name", "block_name")
-        category = _first_native_value(item, "category", "Type", "type")
+    item_mapping = _native_mapping(item)
+    if item_mapping is not None:
+        code = _first_native_value(item_mapping, "code", "Code", "block_code", "stock_code")
+        name = _first_native_value(item_mapping, "name", "Name", "block_name")
+        category = _first_native_value(item_mapping, "category", "Type", "type")
         return {
             "symbol": normalized_symbol,
             "category": str(category) if category is not None else default_category,
@@ -857,7 +877,7 @@ def _normalize_relation_item(
 
 
 def _normalize_ipo_item(item: Any) -> dict[str, Any]:
-    native = item if isinstance(item, dict) else {"value": item}
+    native = _native_record(item)
     code = _first_native_value(native, "code", "Code")
     name = _first_native_value(native, "name", "Name")
     subscribe_code = _first_native_value(native, "SGCode", "subscribeCode")
@@ -875,7 +895,7 @@ def _normalize_ipo_item(item: Any) -> dict[str, Any]:
 
 
 def _normalize_share_capital_item(symbol: str, item: Any) -> dict[str, Any]:
-    native = item if isinstance(item, dict) else {"value": item}
+    native = _native_record(item)
     date = _first_native_value(native, "Date", "date")
     total_share_capital = _first_native_value(native, "Zgb", "TotalShare", "totalShareCapital")
     float_share_capital = _first_native_value(native, "Ltgb", "FlowShare", "floatShareCapital")
@@ -890,7 +910,7 @@ def _normalize_share_capital_item(symbol: str, item: Any) -> dict[str, Any]:
 
 
 def _normalize_dividend_factor_item(symbol: str, item: Any) -> dict[str, Any]:
-    native = item if isinstance(item, dict) else {"value": item}
+    native = _native_record(item)
     date = _first_native_value(native, "Date", "date")
     factor_type = _first_native_value(native, "Type", "type")
     bonus = _first_native_value(native, "Bonus", "bonus")
@@ -911,7 +931,7 @@ def _normalize_dividend_factor_item(symbol: str, item: Any) -> dict[str, Any]:
 
 
 def _normalize_convertible_bond_item(symbol: str, item: Any) -> dict[str, Any]:
-    native = item if isinstance(item, dict) else {"value": item}
+    native = _native_record(item)
     bond_code = _first_native_value(native, "KZZCode", "Code", "code", "stock_code")
     underlying_symbol = _first_native_value(native, "HSCode", "underlyingSymbol")
     convert_price = _first_native_value(native, "ZGPrice", "convertPrice")
@@ -936,7 +956,7 @@ def _normalize_convertible_bond_item(symbol: str, item: Any) -> dict[str, Any]:
 
 
 def _normalize_tracking_etf_item(index_symbol: str, item: Any) -> dict[str, Any]:
-    native = item if isinstance(item, dict) else {"value": item}
+    native = _native_record(item)
     code = _first_native_value(native, "Code", "code")
     name = _first_native_value(native, "Name", "name")
     price = _first_native_value(native, "NowPrice", "price")
@@ -1011,7 +1031,7 @@ def _normalize_single_finance_value_items(
 
 def _normalize_trade_aggregate_items(
     scope: str,
-    codes: list[str | None],
+    codes: list[str] | list[str | None],
     fields: list[str],
     native: Any,
 ) -> list[dict[str, Any]]:
@@ -1040,7 +1060,8 @@ def _normalize_trade_aggregate_items(
 
 def _normalize_formula_data_items(native: Any) -> list[dict[str, Any]]:
     values = _unwrap_tdx_value(native)
-    if isinstance(values, dict):
+    values_mapping = _native_mapping(values)
+    if values_mapping is not None:
         return [
             {
                 "symbol": normalize_symbol(str(symbol)),
@@ -1048,15 +1069,16 @@ def _normalize_formula_data_items(native: Any) -> list[dict[str, Any]]:
                 "provider": "tdx",
                 "raw": rows,
             }
-            for symbol, rows in values.items()
+            for symbol, rows in values_mapping.items()
         ]
     if isinstance(values, list | tuple):
+        values_sequence = _native_sequence(values)
         return [
             {
                 "symbol": None,
-                "rows": _as_sequence(values),
+                "rows": values_sequence,
                 "provider": "tdx",
-                "raw": values,
+                "raw": values_sequence,
             }
         ]
     return []
@@ -1077,12 +1099,13 @@ def _normalize_formula_data_item(native: Any) -> dict[str, Any]:
 
 def _normalize_formula_operation_result(native: Any) -> dict[str, Any]:
     values = _unwrap_tdx_value(native)
-    if isinstance(values, dict):
-        message = _first_native_value(values, "Result", "message", "Message")
+    values_mapping = _native_mapping(values)
+    if values_mapping is not None:
+        message = _first_native_value(values_mapping, "Result", "message", "Message")
         result = TdxFormulaOperationResult(
             ok=True,
             message=str(message) if message is not None else "OK",
-            raw=values,
+            raw=values_mapping,
         )
         return result.model_dump(by_alias=True)
     if isinstance(values, bool):
@@ -1097,7 +1120,7 @@ def _normalize_formula_operation_result(native: Any) -> dict[str, Any]:
 
 
 def _normalize_formula_metadata_item(item: Any) -> dict[str, Any]:
-    native = item if isinstance(item, dict) else {"value": item}
+    native = _native_record(item)
     code = _first_native_value(native, "FormulaCode", "Code", "code")
     name = _first_native_value(native, "FormulaName", "Name", "name")
     formula_type = _first_native_value(native, "Type", "formulaType", "type")
@@ -1114,7 +1137,7 @@ def _normalize_formula_metadata_item(item: Any) -> dict[str, Any]:
 
 def _normalize_formula_info_item(native: Any) -> dict[str, Any]:
     values = _unwrap_tdx_value(native)
-    item = values if isinstance(values, dict) else {"value": values}
+    item = _native_record(values)
     metadata = _normalize_formula_metadata_item(item)
     metadata["params"] = _as_sequence(_first_native_value(item, "Params", "params"))
     metadata["lines"] = _as_sequence(_first_native_value(item, "Lines", "lines"))
@@ -1172,13 +1195,15 @@ def _formula_batch_method(kind: str) -> str:
 def _native_items(native: Any, *preferred_list_fields: str) -> list[Any]:
     values = _unwrap_tdx_value(native)
     if isinstance(values, list | tuple):
-        return list(values)
-    if isinstance(values, dict):
+        return _native_sequence(values)
+    values_mapping = _native_mapping(values)
+    if values_mapping is not None:
         for field_name in preferred_list_fields:
-            field_value = _first_native_value(values, field_name)
-            if isinstance(field_value, list | tuple):
-                return list(field_value)
-        return [values]
+            field_value = _first_native_value(values_mapping, field_name)
+            field_sequence = _native_sequence(field_value)
+            if field_sequence:
+                return field_sequence
+        return [values_mapping]
     if values is None:
         return []
     return [values]
@@ -1188,17 +1213,19 @@ def _native_item_for_symbol(native: Any, symbol: str) -> Any:
     values = _unwrap_tdx_value(native)
     normalized_symbol = normalize_symbol(symbol)
     candidates = _code_candidates(normalized_symbol)
-    if isinstance(values, dict):
-        for key, value in values.items():
+    values_mapping = _native_mapping(values)
+    if values_mapping is not None:
+        for key, value in values_mapping.items():
             if str(key).upper() in candidates:
                 return value
-        if _native_record_matches_symbol(values, candidates):
-            return values
+        if _native_record_matches_symbol(values_mapping, candidates):
+            return values_mapping
         raise TdxSymbolNotFoundError(symbol=normalized_symbol, native=native)
-    if isinstance(values, list | tuple):
-        for item in values:
-            if isinstance(item, dict) and _native_record_matches_symbol(item, candidates):
-                return item
+    for item in _native_sequence(values):
+        item_mapping = _native_mapping(item)
+        if item_mapping is not None and _native_record_matches_symbol(item_mapping, candidates):
+            return item_mapping
+    if _native_sequence(values):
         raise TdxSymbolNotFoundError(symbol=normalized_symbol, native=native)
     raise TdxSymbolNotFoundError(symbol=normalized_symbol, native=native)
 
@@ -1207,62 +1234,67 @@ def _as_sequence(value: Any) -> list[Any]:
     if value is None:
         return []
     if isinstance(value, list | tuple):
-        return list(value)
+        return _native_sequence(value)
     return [value]
 
 
 def _record_for_code(values: Any, code: str | None) -> Any:
+    values_mapping = _native_mapping(values)
     if code is None:
-        return values if isinstance(values, dict) else {}
-    if not isinstance(values, dict):
+        return values_mapping or {}
+    if values_mapping is None:
         return values
 
     candidates = _code_candidates(code)
-    for key, value in values.items():
+    for key, value in values_mapping.items():
         if str(key).upper() in candidates:
             return value
-    return values
+    return values_mapping
 
 
 def _lookup_symbol_field(values: Any, symbol: str, field_name: str) -> Any:
-    if not isinstance(values, dict):
+    values_mapping = _native_mapping(values)
+    if values_mapping is None:
         return values
 
-    symbol_record = _record_for_code(values, symbol)
-    if isinstance(symbol_record, dict):
-        direct_value = _first_native_value(symbol_record, field_name)
+    symbol_record = _record_for_code(values_mapping, symbol)
+    symbol_mapping = _native_mapping(symbol_record)
+    if symbol_mapping is not None:
+        direct_value = _first_native_value(symbol_mapping, field_name)
         if direct_value is not None:
-            if symbol_record is values and isinstance(direct_value, dict):
+            if symbol_record is values_mapping and _native_mapping(direct_value) is not None:
                 nested_value = _record_for_code(direct_value, symbol)
                 if nested_value is not direct_value:
                     return nested_value
             return direct_value
 
-    field_record = _first_native_value(values, field_name)
-    if isinstance(field_record, dict):
+    field_record = _first_native_value(values_mapping, field_name)
+    if _native_mapping(field_record) is not None:
         symbol_value = _record_for_code(field_record, symbol)
         if symbol_value is not field_record:
             return symbol_value
 
-    if symbol_record is not values:
+    if symbol_record is not values_mapping:
         return symbol_record
-    return _first_native_value(values, field_name)
+    return _first_native_value(values_mapping, field_name)
 
 
 def _lookup_aggregate_value(values: Any, code: str | None, field_name: str) -> Any:
-    if not isinstance(values, dict):
+    values_mapping = _native_mapping(values)
+    if values_mapping is None:
         return values
     if code is None:
-        return _first_native_value(values, field_name)
+        return _first_native_value(values_mapping, field_name)
 
-    code_record = _record_for_code(values, code)
-    if isinstance(code_record, dict):
-        direct_value = _first_native_value(code_record, field_name)
+    code_record = _record_for_code(values_mapping, code)
+    code_mapping = _native_mapping(code_record)
+    if code_mapping is not None:
+        direct_value = _first_native_value(code_mapping, field_name)
         if direct_value is not None:
             return direct_value
 
-    field_record = _first_native_value(values, field_name)
-    if isinstance(field_record, dict):
+    field_record = _first_native_value(values_mapping, field_name)
+    if _native_mapping(field_record) is not None:
         code_value = _record_for_code(field_record, code)
         if code_value is not field_record:
             return code_value
@@ -1286,17 +1318,20 @@ def _native_record_matches_symbol(record: dict[str, Any], candidates: set[str]) 
 
 
 def _metadata_value(record: Any, field_name: str) -> str | None:
-    if not isinstance(record, dict):
+    record_mapping = _native_mapping(record)
+    if record_mapping is None:
         return None
-    value = _first_native_value(record, field_name)
+    value = _first_native_value(record_mapping, field_name)
     return str(value) if value is not None else None
 
 
 def _scalar_value(value: Any) -> Any:
     if isinstance(value, list | tuple):
-        return [_scalar_value(item) for item in value]
-    if isinstance(value, dict):
-        return value
+        value_sequence = _native_sequence(value)
+        return [_scalar_value(item) for item in value_sequence]
+    value_mapping = _native_mapping(value)
+    if value_mapping is not None:
+        return value_mapping
     numeric_value = _optional_float(value)
     if numeric_value is not None:
         return numeric_value
@@ -1305,22 +1340,24 @@ def _scalar_value(value: Any) -> Any:
 
 def _aggregate_events(value: Any) -> list[Any]:
     if isinstance(value, list | tuple):
-        if not value:
+        value_sequence = _native_sequence(value)
+        if not value_sequence:
             return []
-        if any(isinstance(item, dict) for item in value):
-            return list(value)
-        return [value]
+        if any(_native_mapping(item) is not None for item in value_sequence):
+            return value_sequence
+        return [value_sequence]
     return [value]
 
 
 def _aggregate_event_parts(event: Any) -> tuple[Any | None, Any]:
-    if isinstance(event, dict):
-        date = _first_native_value(event, "Date", "date")
-        raw_values = _first_native_value(event, "Value", "value", "values")
+    event_mapping = _native_mapping(event)
+    if event_mapping is not None:
+        date = _first_native_value(event_mapping, "Date", "date")
+        raw_values = _first_native_value(event_mapping, "Value", "value", "values")
         if raw_values is None:
             raw_values = {
                 key: value
-                for key, value in event.items()
+                for key, value in event_mapping.items()
                 if normalize_native_key(key) != "date"
             }
         return date, raw_values
@@ -1337,9 +1374,11 @@ def _normalize_aggregate_code(scope: str, code: str | None) -> str | None:
 
 def _numeric_values(value: Any) -> list[Any]:
     if isinstance(value, list | tuple):
-        return [_scalar_value(item) for item in value]
-    if isinstance(value, dict):
-        return [_scalar_value(item) for item in value.values()]
+        value_sequence = _native_sequence(value)
+        return [_scalar_value(item) for item in value_sequence]
+    value_mapping = _native_mapping(value)
+    if value_mapping is not None:
+        return [_scalar_value(item) for item in value_mapping.values()]
     return [_scalar_value(value)]
 
 

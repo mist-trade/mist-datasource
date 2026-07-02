@@ -83,7 +83,7 @@ class TDXMockAdapter(MarketDataAdapter):
             result[field] = {code: result[field].get(code, [100.0]) for code in stock_list}
         return result
 
-    async def subscribe_quote(self, stock_list: list[str]) -> AsyncIterator[dict]:
+    async def subscribe_quote(self, stock_list: list[str]) -> AsyncIterator[dict[str, Any]]:
         """订阅实时行情推送."""
         self._subscribed_stocks.update(stock_list)
         while True:
@@ -108,7 +108,7 @@ class TDXMockAdapter(MarketDataAdapter):
     async def get_full_tick(self, code_list: list[str]) -> dict[str, Any]:
         """获取全推数据（最新分笔快照）."""
         # Return fixed tick data for each code
-        result = {}
+        result: dict[str, Any] = {}
         for code in code_list:
             result[code] = self._snapshot.copy()
         return result
@@ -243,7 +243,7 @@ class TDXMockAdapter(MarketDataAdapter):
     ) -> dict[str, Any]:
         """获取财务数据."""
         # Return fixed financial data from fixture
-        result = {}
+        result: dict[str, Any] = {}
         for code in stock_list:
             if code in self._financial:
                 result[code] = self._financial[code]
@@ -279,7 +279,7 @@ class TDXMockAdapter(MarketDataAdapter):
         self, stock_list: list[str], fields: list[str]
     ) -> dict[str, Any]:
         """获取股票一级数据."""
-        result = {}
+        result: dict[str, Any] = {}
         for field in fields:
             result[field] = {
                 code: 100.0 + hash(code + field) % 50 for code in stock_list
@@ -292,7 +292,7 @@ class TDXMockAdapter(MarketDataAdapter):
         self, stock_list: list[str], field_list: list[str], start_time: str = "", end_time: str = ""
     ) -> dict[str, Any]:
         """获取板块交易数据."""
-        result = {}
+        result: dict[str, Any] = {}
         for field in field_list:
             result[field] = dict.fromkeys(stock_list, 1000000.0)
         return result
@@ -307,7 +307,7 @@ class TDXMockAdapter(MarketDataAdapter):
         self, stock_list: list[str], field_list: list[str], start_time: str = "", end_time: str = ""
     ) -> dict[str, Any]:
         """获取股票交易数据."""
-        result = {}
+        result: dict[str, Any] = {}
         for field in field_list:
             result[field] = dict.fromkeys(stock_list, 500000.0)
         return result
@@ -322,7 +322,7 @@ class TDXMockAdapter(MarketDataAdapter):
         self, field_list: list[str], start_time: str = "", end_time: str = ""
     ) -> dict[str, Any]:
         """获取市场交易数据."""
-        result = {}
+        result: dict[str, Any] = {}
         for field in field_list:
             result[field] = 10000000.0
         return result
@@ -435,7 +435,7 @@ class TDXMockAdapter(MarketDataAdapter):
         """获取订阅列表."""
         return list(self._subscribed_stocks)
 
-    async def subscribe_whole_quote(self, code_list: list[str]) -> AsyncIterator[dict]:
+    async def subscribe_whole_quote(self, code_list: list[str]) -> AsyncIterator[dict[str, Any]]:
         """订阅全推行情数据."""
         while True:
             yield {code: self._snapshot.copy() for code in code_list}

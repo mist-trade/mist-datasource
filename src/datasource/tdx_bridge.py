@@ -13,9 +13,9 @@ from src.ws.protocol import ws_error, ws_ready
 
 @dataclass(slots=True)
 class SubscriptionPlan:
-    to_subscribe: list[str] = field(default_factory=list)
-    to_unsubscribe: list[str] = field(default_factory=list)
-    desired: list[str] = field(default_factory=list)
+    to_subscribe: list[str] = field(default_factory=lambda: [])
+    to_unsubscribe: list[str] = field(default_factory=lambda: [])
+    desired: list[str] = field(default_factory=lambda: [])
     error_code: str | None = None
     error_message: str | None = None
 
