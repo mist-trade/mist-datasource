@@ -167,8 +167,8 @@ async def test_get_bars_raises_native_tdx_errors():
             count=20,
         )
 
-    assert getattr(exc.value, "code") == "TDX_NATIVE_ERROR"
-    assert getattr(exc.value, "details")["nativeErrorId"] == "5"
+    assert exc.value.code == "TDX_NATIVE_ERROR"
+    assert exc.value.details["nativeErrorId"] == "5"
 
 
 @pytest.mark.asyncio
