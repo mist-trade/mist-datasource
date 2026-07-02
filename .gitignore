@@ -148,4 +148,6 @@ Thumbs.db
 
 # uv
 .uv/
+.uv-cache/
+.ruff_cache/
 !uv.lock
