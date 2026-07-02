@@ -4,22 +4,21 @@
 对应 TDX SDK: tqcenter.tq (get_kzz_info, get_ipo_info, get_trackzs_etf_info)
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+
+from tdx.routes.dependencies import get_tdx_adapter
 
 router = APIRouter()
 
 
-def _get_adapter():
-    """获取 TDX 适配器实例.
-
-    延迟导入避免循环依赖.
-    """
-    import tdx.main
-    return tdx.main.tdx_adapter
+def _get_adapter(request: Request):
+    """获取 TDX 适配器实例."""
+    return get_tdx_adapter(request)
 
 
 @router.get("/kzz-info")
 async def get_kzz_info(
+    request: Request,
     stock_code: str = Query(..., description="可转债代码，如 113001.SH"),
     fields: str = Query("", description="逗号分隔的字段名"),
 ):
@@ -30,7 +29,7 @@ async def get_kzz_info(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -45,6 +44,7 @@ async def get_kzz_info(
 
 @router.get("/ipo-info")
 async def get_ipo_info(
+    request: Request,
     ipo_type: int = Query(0, description="IPO类型"),
     ipo_date: int = Query(0, description="IPO日期，格式 YYYYMMDD"),
 ):
@@ -55,7 +55,7 @@ async def get_ipo_info(
     Returns:
         {"data": list[dict]}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -68,6 +68,7 @@ async def get_ipo_info(
 
 @router.get("/trackzs-etf-info")
 async def get_trackzs_etf_info(
+    request: Request,
     zs_code: str = Query(..., description="指数代码，如 000001.SH"),
 ):
     """获取跟踪指数的ETF信息.
@@ -77,7 +78,7 @@ async def get_trackzs_etf_info(
     Returns:
         {"data": list[dict]}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 

@@ -42,6 +42,7 @@ from src.datasource.tdx_models import (
     TdxTradingDatesQueryRequest,
 )
 from src.datasource.tdx_provider import TdxFormulaRequestLimitError
+from tdx.routes.dependencies import get_tdx_provider
 
 router = APIRouter()
 
@@ -74,10 +75,8 @@ def _payload_alias(payload: Any) -> dict[str, Any]:
     return data
 
 
-def _get_provider() -> Any:
-    import tdx.main
-
-    return tdx.main.tdx_provider
+def _get_provider(request: Request) -> Any:
+    return get_tdx_provider(request)
 
 
 def _request_id(request: Request) -> str:
@@ -216,7 +215,7 @@ async def _call_provider(
             provider=provider_id,
         )
 
-    provider = _get_provider()
+    provider = _get_provider(request)
     if provider is None:
         return ResponseEnvelope.failure(
             request_id=_request_id(request),
@@ -235,7 +234,7 @@ async def _call_provider(
 
 @router.get("/providers")
 async def providers(request: Request):
-    provider = _get_provider()
+    provider = _get_provider(request)
     status = "available" if provider is not None else "unavailable"
     return _success(
         request,

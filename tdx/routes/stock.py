@@ -4,22 +4,21 @@
 对应 TDX SDK: tqcenter.tq (get_stock_info, get_more_info, get_relation)
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+
+from tdx.routes.dependencies import get_tdx_adapter
 
 router = APIRouter()
 
 
-def _get_adapter():
-    """获取 TDX 适配器实例.
-
-    延迟导入避免循环依赖.
-    """
-    import tdx.main
-    return tdx.main.tdx_adapter
+def _get_adapter(request: Request):
+    """获取 TDX 适配器实例."""
+    return get_tdx_adapter(request)
 
 
 @router.get("/stock-list")
 async def get_stock_list(
+    request: Request,
     market: str = Query("0", description="市场代码: 0=深证A股, 1=上证A股, 2=深证B股, 3=上证B股"),
 ):
     """获取指定市场股票列表.
@@ -32,7 +31,7 @@ async def get_stock_list(
     Returns:
         {"stocks": [...], "count": int}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -45,6 +44,7 @@ async def get_stock_list(
 
 @router.get("/stock-info")
 async def get_stock_info(
+    request: Request,
     stock_code: str = Query(..., description="股票代码，如 600519.SH"),
 ):
     """获取股票基本信息.
@@ -54,7 +54,7 @@ async def get_stock_info(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -67,6 +67,7 @@ async def get_stock_info(
 
 @router.get("/more-info")
 async def get_more_info(
+    request: Request,
     stock_code: str = Query(..., description="股票代码，如 600519.SH"),
     fields: str = Query("", description="逗号分隔的字段名"),
 ):
@@ -77,7 +78,7 @@ async def get_more_info(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -92,6 +93,7 @@ async def get_more_info(
 
 @router.get("/relation")
 async def get_relation(
+    request: Request,
     stock_code: str = Query(..., description="股票代码，如 600519.SH"),
 ):
     """获取股票所属板块.
@@ -101,7 +103,7 @@ async def get_relation(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 

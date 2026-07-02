@@ -4,19 +4,17 @@
 对应 TDX SDK: tqcenter.tq (exec_to_tdx)
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+
+from tdx.routes.dependencies import get_tdx_adapter
 
 router = APIRouter()
 
 
-def _get_adapter():
-    """获取 TDX 适配器实例.
-
-    延迟导入避免循环依赖.
-    """
-    import tdx.main
-    return tdx.main.tdx_adapter
+def _get_adapter(request: Request):
+    """获取 TDX 适配器实例."""
+    return get_tdx_adapter(request)
 
 
 class ExecRequest(BaseModel):
@@ -26,7 +24,7 @@ class ExecRequest(BaseModel):
 
 
 @router.post("/exec-to-tdx")
-async def exec_to_tdx(request: ExecRequest):
+async def exec_to_tdx(payload: ExecRequest, request: Request):
     """调用客户端功能接口.
 
     对应 TDX SDK: tq.exec_to_tdx(cmd, param)
@@ -34,17 +32,17 @@ async def exec_to_tdx(request: ExecRequest):
     此接口可以触发通达信客户端的各种功能，如打开股票图表等.
 
     Args:
-        request: 包含cmd和param的请求体
+        payload: 包含cmd和param的请求体
 
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
     try:
-        data = await adapter.exec_to_tdx(request.cmd, request.param)
+        data = await adapter.exec_to_tdx(payload.cmd, payload.param)
         return {"data": data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e

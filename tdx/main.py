@@ -47,6 +47,15 @@ _tdx_collector_owned_by_main: Any | None = None
 _tdx_subscription_client_owned_by_main: Any | None = None
 
 
+def _sync_app_state(target_app: FastAPI) -> None:
+    target_app.state.tdx_adapter = tdx_adapter
+    target_app.state.tdx_provider = tdx_provider
+    target_app.state.tdx_bridge = tdx_bridge
+    target_app.state.tdx_collector = tdx_collector
+    target_app.state.tdx_subscription_client = tdx_subscription_client
+    target_app.state.ws_manager = ws_manager
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """应用生命周期管理器.
@@ -108,6 +117,8 @@ async def lifespan(_app: FastAPI):
     else:
         _tdx_subscription_client_owned_by_main = None
 
+    _sync_app_state(_app)
+
     if hasattr(tdx_collector, "start"):
         await tdx_collector.start()
 
@@ -149,6 +160,7 @@ async def lifespan(_app: FastAPI):
                 if tdx_adapter is owned_adapter:
                     tdx_adapter = None
                 _tdx_adapter_owned_by_main = None
+        _sync_app_state(_app)
 
 
 app = FastAPI(
@@ -157,6 +169,7 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+_sync_app_state(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -191,6 +204,9 @@ async def health():
         "adapter": type(tdx_adapter).__name__ if tdx_adapter else "none",
         "connections": ws_manager.connection_count,
         "tdxHttpReachable": provider_health["tdxHttpReachable"],
+        "tdxProviderError": provider_health.get("lastError")
+        or provider_health.get("providerHealthError"),
+        "tdxProviderErrorType": provider_health.get("providerHealthErrorType"),
         "tqInitialized": tdx_adapter is not None,
         "wsConnected": ws_manager.connection_count > 0,
         "subscribedCount": bridge_health["subscribedCount"],
@@ -221,17 +237,25 @@ async def health():
 
 async def _tdx_provider_health() -> dict[str, Any]:
     if tdx_provider is None or not hasattr(tdx_provider, "health"):
-        return {"tdxHttpReachable": False}
+        return {"tdxHttpReachable": False, "lastError": "TDX provider is not initialized"}
 
     try:
         health_status = await tdx_provider.health()
         if not isinstance(health_status, Mapping):
-            return {"tdxHttpReachable": False}
+            return {
+                "tdxHttpReachable": False,
+                "lastError": "TDX provider health returned non-mapping status",
+            }
         return {
             "tdxHttpReachable": bool(health_status.get("tdxHttpReachable", False)),
+            "lastError": health_status.get("lastError"),
         }
-    except Exception:
-        return {"tdxHttpReachable": False}
+    except Exception as exc:
+        return {
+            "tdxHttpReachable": False,
+            "providerHealthError": str(exc),
+            "providerHealthErrorType": type(exc).__name__,
+        }
 
 
 def _tdx_bridge_health() -> dict[str, Any]:

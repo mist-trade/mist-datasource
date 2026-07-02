@@ -235,7 +235,7 @@ class TDXAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get market data: {e}") from e
 
-    async def subscribe_quote(self, stock_list: list[str]) -> Any:
+    async def subscribe_quote(self, stock_list: list[str]) -> dict[str, Any]:
         """TDX 实时行情订阅.
 
         对应 TDX SDK: tq.subscribe_hq(stock_list, callback)
@@ -264,7 +264,11 @@ class TDXAdapter(MarketDataAdapter):
 
     # ---- Market Data Methods ----
 
-    async def get_market_snapshot(self, stock_code: str, field_list: list[str] | None = None) -> dict:
+    async def get_market_snapshot(
+        self,
+        stock_code: str,
+        field_list: list[str] | None = None,
+    ) -> dict[str, Any]:
         """获取实时行情快照.
 
         对应 TDX SDK: tq.get_market_snapshot(stock_code, field_list)
@@ -281,7 +285,12 @@ class TDXAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get market snapshot: {e}") from e
 
-    async def get_divid_factors(self, stock_code: str, start_time: str = "", end_time: str = "") -> Any:
+    async def get_divid_factors(
+        self,
+        stock_code: str,
+        start_time: str = "",
+        end_time: str = "",
+    ) -> Any:
         """获取除权除息数据.
 
         对应 TDX SDK: tq.get_divid_factors(stock_code, start_time, end_time)
@@ -299,7 +308,12 @@ class TDXAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get dividend factors: {e}") from e
 
-    async def get_gb_info(self, stock_code: str, date_list: list[str] | None = None, count: int = 1) -> list[dict]:
+    async def get_gb_info(
+        self,
+        stock_code: str,
+        date_list: list[str] | None = None,
+        count: int = 1,
+    ) -> list[dict[str, Any]]:
         """获取股本数据.
 
         对应 TDX SDK: tq.get_gb_info(stock_code, date_list, count)
@@ -677,7 +691,7 @@ class TDXAdapter(MarketDataAdapter):
 
     # ---- Sector Management Methods ----
 
-    async def get_sector_list(self, list_type: int = 0) -> list:
+    async def get_sector_list(self, list_type: int = 0) -> list[Any]:
         """获取A股板块代码列表.
 
         对应 TDX SDK: tq.get_sector_list(list_type)
@@ -763,7 +777,11 @@ class TDXAdapter(MarketDataAdapter):
 
     # ---- ETF/Bond Methods ----
 
-    async def get_kzz_info(self, stock_code: str = "", field_list: list[str] | None = None) -> dict:
+    async def get_kzz_info(
+        self,
+        stock_code: str = "",
+        field_list: list[str] | None = None,
+    ) -> dict[str, Any]:
         """获取可转债信息.
 
         对应 TDX SDK: tq.get_cb_info(stock_code, field_list)
@@ -782,7 +800,7 @@ class TDXAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get cb info: {e}") from e
 
-    async def get_ipo_info(self, ipo_type: int = 0, ipo_date: int = 0) -> list[dict]:
+    async def get_ipo_info(self, ipo_type: int = 0, ipo_date: int = 0) -> list[dict[str, Any]]:
         """获取新股申购信息.
 
         对应 TDX SDK: tq.get_ipo_info(ipo_type, ipo_date)
@@ -799,7 +817,7 @@ class TDXAdapter(MarketDataAdapter):
         except Exception as e:
             raise AdapterError(f"Failed to get ipo info: {e}") from e
 
-    async def get_trackzs_etf_info(self, zs_code: str = "") -> list[dict]:
+    async def get_trackzs_etf_info(self, zs_code: str = "") -> list[dict[str, Any]]:
         """获取跟踪指数的ETF信息.
 
         对应 TDX SDK: tq.get_trackzs_etf_info(zs_code)
@@ -985,7 +1003,10 @@ class TDXAdapter(MarketDataAdapter):
 
     # ---- Formula Methods (TODO) ----
 
-    async def formula_format_data(self, data_dict: dict[str, Any] | None = None) -> list[dict]:
+    async def formula_format_data(
+        self,
+        data_dict: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         """格式化K线数据.
 
         对应 TDX SDK: tq.formula_format_data(data_dict)

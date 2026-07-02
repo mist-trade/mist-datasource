@@ -3,7 +3,8 @@ from typing import Any
 
 import pytest
 
-from src.datasource.tdx_provider import TdxDatasourceProvider
+from src.core.config import settings
+from src.datasource.tdx_provider import TdxDatasourceProvider, TdxFormulaTimeoutError
 
 REQUIRED_MARKET_DATA_FIELDS = ["Open", "High", "Low", "Close", "Volume", "Amount"]
 
@@ -1110,6 +1111,30 @@ async def test_get_formula_data_calls_tdx_formula_get_data():
     assert item["symbol"] == "688318.SH"
     assert item["rows"] == [{"Close": "144.4"}]
     assert fake_client.calls == [("formula_get_data", {})]
+
+
+@pytest.mark.asyncio
+async def test_formula_methods_default_to_configured_timeout(monkeypatch):
+    monkeypatch.setattr(settings.tdx, "formula_timeout_ms", 1)
+    provider = TdxDatasourceProvider(SlowTdxHttpClient({"formula_get_data": {}}))
+
+    with pytest.raises(TdxFormulaTimeoutError) as exc_info:
+        await provider.get_formula_data()
+
+    assert exc_info.value.details["timeoutMs"] == 1
+
+
+def test_formula_operation_result_model_serializes_result_contract() -> None:
+    from src.datasource.tdx_models import TdxFormulaOperationResult
+
+    result = TdxFormulaOperationResult(ok=True, message="OK", raw={"Result": "OK"})
+
+    assert result.model_dump(by_alias=True) == {
+        "ok": True,
+        "message": "OK",
+        "provider": "tdx",
+        "raw": {"Result": "OK"},
+    }
 
 
 @pytest.mark.asyncio

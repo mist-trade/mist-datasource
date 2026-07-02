@@ -5,7 +5,6 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEV_ONLY_PACKAGES = {"pytest", "pytest-asyncio", "httpx", "ruff"}
 
@@ -44,4 +43,4 @@ def test_dev_dependency_metadata_keeps_dev_tools_available() -> None:
         ]
     }
 
-    assert DEV_ONLY_PACKAGES <= dev_dependencies
+    assert dev_dependencies >= DEV_ONLY_PACKAGES

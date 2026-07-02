@@ -2,11 +2,16 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.core.config import settings
 from src.datasource.contracts import DatasourceError, ResponseMeta, normalize_beijing_iso
 
 
 class TdxModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+
+
+def _formula_timeout_ms() -> int:
+    return settings.tdx.formula_timeout_ms
 
 
 class TdxBar(TdxModel):
@@ -254,7 +259,7 @@ class TdxMarketTradeAggregateByDateQueryRequest(TdxModel):
 class TdxFormulaFormatDataRequest(TdxModel):
     provider: Literal["tdx", "qmt"] = "tdx"
     data: dict[str, Any] = Field(default_factory=dict)
-    timeout_ms: int = Field(default=10000, alias="timeoutMs")
+    timeout_ms: int = Field(default_factory=_formula_timeout_ms, alias="timeoutMs")
 
 
 class TdxFormulaSetDataRequest(TdxModel):
@@ -264,7 +269,7 @@ class TdxFormulaSetDataRequest(TdxModel):
     stock_data: list[dict[str, Any]] = Field(default_factory=list, alias="stockData")
     count: int = -1
     dividend_type: int = Field(default=0, alias="dividendType")
-    timeout_ms: int = Field(default=10000, alias="timeoutMs")
+    timeout_ms: int = Field(default_factory=_formula_timeout_ms, alias="timeoutMs")
 
 
 class TdxFormulaSetDataInfoRequest(TdxModel):
@@ -275,25 +280,25 @@ class TdxFormulaSetDataInfoRequest(TdxModel):
     end_time: str = Field(default="", alias="endTime")
     count: int = -1
     dividend_type: int = Field(default=0, alias="dividendType")
-    timeout_ms: int = Field(default=10000, alias="timeoutMs")
+    timeout_ms: int = Field(default_factory=_formula_timeout_ms, alias="timeoutMs")
 
 
 class TdxFormulaGetDataRequest(TdxModel):
     provider: Literal["tdx", "qmt"] = "tdx"
-    timeout_ms: int = Field(default=10000, alias="timeoutMs")
+    timeout_ms: int = Field(default_factory=_formula_timeout_ms, alias="timeoutMs")
 
 
 class TdxFormulaMetadataQueryRequest(TdxModel):
     provider: Literal["tdx", "qmt"] = "tdx"
     formula_type: int = Field(default=0, alias="formulaType")
-    timeout_ms: int = Field(default=10000, alias="timeoutMs")
+    timeout_ms: int = Field(default_factory=_formula_timeout_ms, alias="timeoutMs")
 
 
 class TdxFormulaMetadataInfoQueryRequest(TdxModel):
     provider: Literal["tdx", "qmt"] = "tdx"
     formula_type: int = Field(default=0, alias="formulaType")
     formula_code: str = Field(alias="formulaCode")
-    timeout_ms: int = Field(default=10000, alias="timeoutMs")
+    timeout_ms: int = Field(default_factory=_formula_timeout_ms, alias="timeoutMs")
 
 
 class TdxFormulaExecutionRequest(TdxModel):
@@ -301,7 +306,7 @@ class TdxFormulaExecutionRequest(TdxModel):
     formula_name: str = Field(alias="formulaName")
     formula_arg: str = Field(default="", alias="formulaArg")
     xsflag: int | None = None
-    timeout_ms: int = Field(default=10000, alias="timeoutMs")
+    timeout_ms: int = Field(default_factory=_formula_timeout_ms, alias="timeoutMs")
 
 
 class TdxFormulaBatchExecutionRequest(TdxModel):
@@ -317,7 +322,14 @@ class TdxFormulaBatchExecutionRequest(TdxModel):
     end_time: str = Field(default="", alias="endTime")
     count: int = -1
     dividend_type: int = Field(default=0, alias="dividendType")
-    timeout_ms: int = Field(default=10000, alias="timeoutMs")
+    timeout_ms: int = Field(default_factory=_formula_timeout_ms, alias="timeoutMs")
+
+
+class TdxFormulaOperationResult(TdxModel):
+    ok: bool
+    message: str
+    provider: str = "tdx"
+    raw: Any | None = None
 
 
 class RawTdxCallRequest(TdxModel):

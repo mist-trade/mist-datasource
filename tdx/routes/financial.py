@@ -4,22 +4,21 @@
 对应 TDX SDK: tqcenter.tq (get_financial_data, get_financial_data_by_date, get_gp_one_data)
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+
+from tdx.routes.dependencies import get_tdx_adapter
 
 router = APIRouter()
 
 
-def _get_adapter():
-    """获取 TDX 适配器实例.
-
-    延迟导入避免循环依赖.
-    """
-    import tdx.main
-    return tdx.main.tdx_adapter
+def _get_adapter(request: Request):
+    """获取 TDX 适配器实例."""
+    return get_tdx_adapter(request)
 
 
 @router.get("/financial-data")
 async def get_financial_data(
+    request: Request,
     stocks: str = Query(..., description="逗号分隔的股票代码，如 600519.SH,000001.SZ"),
     fields: str = Query(..., description="逗号分隔的字段名，如 FN193,FN194"),
     start_time: str = Query("", description="起始时间，格式 YYYYMMDD"),
@@ -33,7 +32,7 @@ async def get_financial_data(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -49,6 +48,7 @@ async def get_financial_data(
 
 @router.get("/financial-data-by-date")
 async def get_financial_data_by_date(
+    request: Request,
     stocks: str = Query(..., description="逗号分隔的股票代码"),
     fields: str = Query(..., description="逗号分隔的字段名"),
     year: int = Query(..., description="年份，如 2024"),
@@ -61,7 +61,7 @@ async def get_financial_data_by_date(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -77,6 +77,7 @@ async def get_financial_data_by_date(
 
 @router.get("/gp-one-data")
 async def get_gp_one_data(
+    request: Request,
     stocks: str = Query(..., description="逗号分隔的股票代码"),
     fields: str = Query(..., description="逗号分隔的字段名"),
 ):
@@ -87,7 +88,7 @@ async def get_gp_one_data(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 

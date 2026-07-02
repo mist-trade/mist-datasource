@@ -2,7 +2,10 @@ import pandas as pd
 
 from src.datasource.tdx_models import TdxBar, TdxBarQueryRequest, TdxSnapshot
 from src.datasource.tdx_normalization import (
+    native_value,
+    normalize_native_key,
     normalize_number,
+    normalize_optional_number,
     normalize_symbol,
     normalize_tdx_bar_rows,
     normalize_tdx_snapshot,
@@ -34,6 +37,26 @@ def test_normalize_number_coerces_strings_and_empty_values():
     assert normalize_number(9) == 9.0
     assert normalize_number("") == 0.0
     assert normalize_number(None) == 0.0
+
+
+def test_normalize_optional_number_treats_blank_provider_values_as_missing():
+    assert normalize_optional_number("") is None
+    assert normalize_optional_number("   ") is None
+    assert normalize_optional_number(None) is None
+    assert normalize_optional_number("12.30") == 12.3
+
+
+def test_native_key_helpers_normalize_provider_field_variants():
+    native = {
+        "SG Code": "371036",
+        "Formula_Code": "MACD",
+        "last close": "9.9",
+    }
+
+    assert normalize_native_key("SG Code") == normalize_native_key("sg_code")
+    assert native_value(native, "sg_code") == "371036"
+    assert native_value(native, "formulaCode") == "MACD"
+    assert native_value(native, "LastClose") == "9.9"
 
 
 def test_tdx_bar_model_normalizes_naive_time_fields_to_beijing_iso():

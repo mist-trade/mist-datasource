@@ -4,8 +4,11 @@ from typing import Any
 
 from src.core.config import settings
 from src.datasource.tdx_http_client import TdxHttpClient
-from src.datasource.tdx_models import TdxBar, TdxSnapshot
+from src.datasource.tdx_models import TdxBar, TdxFormulaOperationResult, TdxSnapshot
 from src.datasource.tdx_normalization import (
+    native_value,
+    normalize_native_key,
+    normalize_optional_number,
     normalize_symbol,
     normalize_tdx_bar_rows,
     normalize_tdx_snapshot,
@@ -97,6 +100,17 @@ def _raise_for_native_error(native: Any) -> None:
     error_id = native.get("ErrorId")
     if error_id is not None and str(error_id) != "0":
         raise TdxNativeError(native)
+
+
+def _effective_formula_timeout_ms(timeout_ms: int | None = None) -> int:
+    if timeout_ms is None:
+        return settings.tdx.formula_timeout_ms
+    return int(timeout_ms)
+
+
+def _payload_formula_timeout_ms(payload: dict[str, Any]) -> int:
+    timeout_ms = payload.get("timeoutMs")
+    return _effective_formula_timeout_ms(int(timeout_ms) if timeout_ms is not None else None)
 
 
 class TdxDatasourceProvider:
@@ -491,7 +505,7 @@ class TdxDatasourceProvider:
     async def format_formula_data(
         self,
         data: dict[str, Any],
-        timeout_ms: int = 10000,
+        timeout_ms: int | None = None,
     ) -> list[dict[str, Any]]:
         native = await self._call_formula_method(
             "formula_format_data",
@@ -510,7 +524,7 @@ class TdxDatasourceProvider:
                 "count": payload.get("count", -1),
                 "dividend_type": payload.get("dividendType", 0),
             },
-            timeout_ms=int(payload.get("timeoutMs", 10000)),
+            timeout_ms=_payload_formula_timeout_ms(payload),
         )
         return _normalize_formula_operation_result(native)
 
@@ -525,18 +539,18 @@ class TdxDatasourceProvider:
                 "count": payload.get("count", -1),
                 "dividend_type": payload.get("dividendType", 0),
             },
-            timeout_ms=int(payload.get("timeoutMs", 10000)),
+            timeout_ms=_payload_formula_timeout_ms(payload),
         )
         return _normalize_formula_operation_result(native)
 
-    async def get_formula_data(self, timeout_ms: int = 10000) -> dict[str, Any]:
+    async def get_formula_data(self, timeout_ms: int | None = None) -> dict[str, Any]:
         native = await self._call_formula_method("formula_get_data", {}, timeout_ms=timeout_ms)
         return _normalize_formula_data_item(native)
 
     async def get_formula_list(
         self,
         formula_type: int = 0,
-        timeout_ms: int = 10000,
+        timeout_ms: int | None = None,
     ) -> list[dict[str, Any]]:
         native = await self._call_formula_method(
             "formula_get_all",
@@ -549,7 +563,7 @@ class TdxDatasourceProvider:
         self,
         formula_type: int,
         formula_code: str,
-        timeout_ms: int = 10000,
+        timeout_ms: int | None = None,
     ) -> dict[str, Any]:
         native = await self._call_formula_method(
             "formula_get_info",
@@ -567,7 +581,7 @@ class TdxDatasourceProvider:
         formula_name: str,
         formula_arg: str,
         xsflag: int | None,
-        timeout_ms: int,
+        timeout_ms: int | None = None,
     ) -> dict[str, Any]:
         method = _formula_execution_method(kind)
         params = {
@@ -599,7 +613,7 @@ class TdxDatasourceProvider:
                 "count": payload.get("count", -1),
                 "dividend_type": payload.get("dividendType", 0),
             },
-            timeout_ms=int(payload.get("timeoutMs", 10000)),
+            timeout_ms=_payload_formula_timeout_ms(payload),
         )
         return _normalize_formula_batch_result(kind, payload.get("formulaName", ""), native)
 
@@ -608,15 +622,19 @@ class TdxDatasourceProvider:
         method: str,
         params: dict[str, Any],
         *,
-        timeout_ms: int,
+        timeout_ms: int | None = None,
     ) -> Any:
+        effective_timeout_ms = _effective_formula_timeout_ms(timeout_ms)
         try:
             return await asyncio.wait_for(
                 self.client.call(method, params),
-                timeout=max(timeout_ms, 1) / 1000,
+                timeout=max(effective_timeout_ms, 1) / 1000,
             )
         except TimeoutError as exc:
-            raise TdxFormulaTimeoutError(method=method, timeout_ms=timeout_ms) from exc
+            raise TdxFormulaTimeoutError(
+                method=method,
+                timeout_ms=effective_timeout_ms,
+            ) from exc
 
     async def raw_call(self, method: str, params: dict[str, Any] | list[Any] | None = None) -> Any:
         return await self.client.call(method, params)
@@ -682,7 +700,7 @@ def _unwrap_tdx_value(native: Any) -> Any:
     if not isinstance(native, dict):
         return native
     for key, value in native.items():
-        if key.replace("_", "").replace(" ", "").lower() == "value":
+        if normalize_native_key(key) == "value":
             return value
     return native
 
@@ -1061,15 +1079,21 @@ def _normalize_formula_operation_result(native: Any) -> dict[str, Any]:
     values = _unwrap_tdx_value(native)
     if isinstance(values, dict):
         message = _first_native_value(values, "Result", "message", "Message")
-        return {
-            "ok": True,
-            "message": str(message) if message is not None else "OK",
-            "provider": "tdx",
-            "raw": values,
-        }
+        result = TdxFormulaOperationResult(
+            ok=True,
+            message=str(message) if message is not None else "OK",
+            raw=values,
+        )
+        return result.model_dump(by_alias=True)
     if isinstance(values, bool):
-        return {"ok": values, "message": "OK" if values else "FAILED", "provider": "tdx", "raw": values}
-    return {"ok": True, "message": str(values), "provider": "tdx", "raw": values}
+        result = TdxFormulaOperationResult(
+            ok=values,
+            message="OK" if values else "FAILED",
+            raw=values,
+        )
+        return result.model_dump(by_alias=True)
+    result = TdxFormulaOperationResult(ok=True, message=str(values), raw=values)
+    return result.model_dump(by_alias=True)
 
 
 def _normalize_formula_metadata_item(item: Any) -> dict[str, Any]:
@@ -1297,7 +1321,7 @@ def _aggregate_event_parts(event: Any) -> tuple[Any | None, Any]:
             raw_values = {
                 key: value
                 for key, value in event.items()
-                if str(key).replace("_", "").lower() != "date"
+                if normalize_native_key(key) != "date"
             }
         return date, raw_values
     return None, event
@@ -1320,19 +1344,12 @@ def _numeric_values(value: Any) -> list[Any]:
 
 
 def _first_native_value(native: dict[str, Any], *field_names: str) -> Any:
-    for field_name in field_names:
-        expected = field_name.replace("_", "").replace(" ", "").lower()
-        for key, value in native.items():
-            if str(key).replace("_", "").replace(" ", "").lower() == expected:
-                return value
-    return None
+    return native_value(native, *field_names)
 
 
 def _optional_float(value: Any) -> float | None:
-    if value is None or value == "":
-        return None
     try:
-        return float(value)
+        return normalize_optional_number(value)
     except (TypeError, ValueError):
         return None
 

@@ -37,18 +37,17 @@ Each instance is a separate FastAPI app. Shared code lives in `src/`.
 ### Request Flow
 
 ```
-NestJS backend → HTTP /api/{tdx|qmt}/* → routes/ → adapter (module global in main.py)
+NestJS backend → HTTP /api/{tdx|qmt}/* → routes/ → adapter/provider from app.state
                 → WebSocket /ws/quote/{client_id} → ws_manager.broadcast()
 ```
 
-### Module-Level Singletons
+### Runtime State
 
-Each `main.py` holds module-level globals: `{tdx|qmt}_adapter` (adapter instance) and `ws_manager` (WebSocket connection manager). Routes access these via a `_get_adapter()` helper that imports from the main module to avoid circular dependencies:
+Each `main.py` owns the process runtime objects: `{tdx|qmt}_adapter` (adapter instance), TDX provider/collector/subscription objects, and `ws_manager` (WebSocket connection manager). FastAPI lifespan startup mirrors these objects onto `app.state`, and routes read runtime dependencies from `request.app.state` or `websocket.app.state`:
 
 ```python
-def _get_adapter():
-    import tdx.main
-    return tdx.main.tdx_adapter
+def _get_adapter(request: Request):
+    return request.app.state.tdx_adapter
 ```
 
 Services use singleton pattern (e.g., `tdx_service = TDXService()` in `tdx/services/`).

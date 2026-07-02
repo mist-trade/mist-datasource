@@ -2,11 +2,14 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from starlette.requests import Request
 
 from src.datasource.tdx_http_client import TdxHttpError
 from src.datasource.tdx_models import TdxBar, TdxSnapshot
 from tdx.main import app
+from tdx.routes import v1 as tdx_v1_routes
 
 
 class FakeTdxProvider:
@@ -537,6 +540,11 @@ class NonDictHealthProvider(FakeTdxProvider):
         return ["not", "a", "dict"]
 
 
+class RaisingHealthProvider(FakeTdxProvider):
+    async def health(self) -> dict[str, Any]:
+        raise RuntimeError("tdx health failed")
+
+
 class FakeAdapter:
     def __init__(self) -> None:
         self.initialized = False
@@ -575,7 +583,22 @@ async def v1_client() -> AsyncClient:
     previous_collector = tdx.main.tdx_collector
     previous_adapter = tdx.main.tdx_adapter
     previous_owned_provider = tdx.main._tdx_provider_owned_by_main
+    previous_state_provider = getattr(app.state, "tdx_provider", None)
+    previous_state_bridge = getattr(app.state, "tdx_bridge", None)
+    previous_state_collector = getattr(app.state, "tdx_collector", None)
+    previous_state_adapter = getattr(app.state, "tdx_adapter", None)
+    previous_state_subscription_client = getattr(
+        app.state,
+        "tdx_subscription_client",
+        None,
+    )
     tdx.main.tdx_provider = FakeTdxProvider()
+    app.state.tdx_provider = tdx.main.tdx_provider
+    app.state.tdx_bridge = tdx.main.tdx_bridge
+    app.state.tdx_collector = tdx.main.tdx_collector
+    app.state.tdx_adapter = tdx.main.tdx_adapter
+    app.state.tdx_subscription_client = tdx.main.tdx_subscription_client
+    app.state.ws_manager = tdx.main.ws_manager
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             yield client
@@ -585,6 +608,29 @@ async def v1_client() -> AsyncClient:
         tdx.main.tdx_collector = previous_collector
         tdx.main.tdx_adapter = previous_adapter
         tdx.main._tdx_provider_owned_by_main = previous_owned_provider
+        app.state.tdx_provider = previous_state_provider
+        app.state.tdx_bridge = previous_state_bridge
+        app.state.tdx_collector = previous_state_collector
+        app.state.tdx_adapter = previous_state_adapter
+        app.state.tdx_subscription_client = previous_state_subscription_client
+        app.state.ws_manager = tdx.main.ws_manager
+
+
+def test_v1_provider_lookup_reads_request_app_state() -> None:
+    state_app = FastAPI()
+    provider = FakeTdxProvider()
+    state_app.state.tdx_provider = provider
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/v1/bars/query",
+            "headers": [],
+            "app": state_app,
+        }
+    )
+
+    assert tdx_v1_routes._get_provider(request) is provider
 
 
 @pytest.mark.asyncio
@@ -1664,6 +1710,36 @@ async def test_health_handles_non_dict_provider_health() -> None:
 
         assert response.status_code == 200
         assert response.json()["tdxHttpReachable"] is False
+    finally:
+        tdx.main.tdx_provider = previous_provider
+        tdx.main.tdx_bridge = previous_bridge
+        tdx.main.tdx_collector = previous_collector
+        tdx.main.tdx_adapter = previous_adapter
+        tdx.main._tdx_provider_owned_by_main = previous_owned_provider
+
+
+@pytest.mark.asyncio
+async def test_health_surfaces_provider_health_exceptions() -> None:
+    import tdx.main
+
+    previous_provider = tdx.main.tdx_provider
+    previous_bridge = tdx.main.tdx_bridge
+    previous_collector = tdx.main.tdx_collector
+    previous_adapter = tdx.main.tdx_adapter
+    previous_owned_provider = tdx.main._tdx_provider_owned_by_main
+    tdx.main.tdx_provider = RaisingHealthProvider()
+    tdx.main.tdx_bridge = None
+    tdx.main.tdx_collector = None
+
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.get("/health")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["tdxHttpReachable"] is False
+        assert body["tdxProviderError"] == "tdx health failed"
+        assert body["tdxProviderErrorType"] == "RuntimeError"
     finally:
         tdx.main.tdx_provider = previous_provider
         tdx.main.tdx_bridge = previous_bridge

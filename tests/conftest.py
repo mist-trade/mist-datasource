@@ -18,6 +18,7 @@ async def tdx_client() -> AsyncGenerator[AsyncClient, None]:
 
     # Initialize the adapter in the tdx.main module
     tdx.main.tdx_adapter = create_tdx_adapter()
+    tdx_app.state.tdx_adapter = tdx.main.tdx_adapter
     await tdx.main.tdx_adapter.initialize()
 
     try:
@@ -29,6 +30,7 @@ async def tdx_client() -> AsyncGenerator[AsyncClient, None]:
         if tdx.main.tdx_adapter:
             await tdx.main.tdx_adapter.shutdown()
             tdx.main.tdx_adapter = None
+            tdx_app.state.tdx_adapter = None
 
 
 @pytest.fixture

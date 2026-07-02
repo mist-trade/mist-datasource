@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
@@ -44,9 +45,23 @@ def normalize_number(value: Any) -> float:
 
 
 def normalize_optional_number(value: Any) -> float | None:
-    if value is None or value == "":
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip() == "":
         return None
     return float(value)
+
+
+def normalize_native_key(value: Any) -> str:
+    return str(value).replace("_", "").replace(" ", "").lower()
+
+
+def native_value(native: Mapping[str, Any], *field_names: str) -> Any:
+    expected_keys = {normalize_native_key(field_name) for field_name in field_names}
+    for key, value in native.items():
+        if normalize_native_key(key) in expected_keys:
+            return value
+    return None
 
 
 def normalize_tdx_bar_rows(symbol: str, period: str, native: dict[str, Any]) -> list[TdxBar]:
@@ -243,12 +258,8 @@ def _tdx_array_timestamp(date_value: Any, time_value: Any) -> str | None:
 
 
 def _get_native_value(native: dict[str, Any], field_name: str) -> Any:
-    expected = _native_key_token(field_name)
-    for key, value in native.items():
-        if _native_key_token(key) == expected:
-            return value
-    return None
+    return native_value(native, field_name)
 
 
 def _native_key_token(value: str) -> str:
-    return value.replace("_", "").replace(" ", "").lower()
+    return normalize_native_key(value)

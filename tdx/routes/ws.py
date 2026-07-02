@@ -36,31 +36,25 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from src.core.config import settings
 from src.datasource.tdx_bridge import TdxBridge
 from src.ws.protocol import ws_pong, ws_subscription_ack
+from tdx.routes.dependencies import (
+    get_tdx_bridge,
+    get_tdx_subscription_client,
+    get_ws_manager,
+)
 
 router = APIRouter()
 
 
-def _get_ws_manager():
-    import tdx.main as tdx_main
-
-    return tdx_main.ws_manager
+def _get_ws_manager(websocket: WebSocket):
+    return get_ws_manager(websocket)
 
 
-def _get_subscription_client():
-    import tdx.main as tdx_main
-
-    return tdx_main.tdx_subscription_client
+def _get_subscription_client(websocket: WebSocket):
+    return get_tdx_subscription_client(websocket)
 
 
-def _get_bridge() -> TdxBridge:
-    import tdx.main as tdx_main
-
-    if tdx_main.tdx_bridge is None:
-        tdx_main.tdx_bridge = TdxBridge(
-            queue_max_size=settings.tdx.ws_queue_max_size,
-            max_subscriptions=settings.tdx.max_subscriptions,
-        )
-    return tdx_main.tdx_bridge
+def _get_bridge(websocket: WebSocket) -> TdxBridge:
+    return get_tdx_bridge(websocket)
 
 
 def _message_symbols(message: dict[str, Any]) -> list[str] | None:
@@ -114,8 +108,8 @@ async def websocket_quote(websocket: WebSocket, client_id: str):
         心跳: {"type": "ping"}
         订阅: {"type": "subscribe", "stocks": ["600519.SH", "000001.SZ"]}
     """
-    ws_manager = _get_ws_manager()
-    bridge = _get_bridge()
+    ws_manager = _get_ws_manager(websocket)
+    bridge = _get_bridge(websocket)
     if not await ws_manager.connect_unique(websocket, client_id):
         await websocket.accept()
         await websocket.send_text(
@@ -134,7 +128,7 @@ async def websocket_quote(websocket: WebSocket, client_id: str):
     bridge.claim_leader(client_id)
     await websocket.send_text(json.dumps(bridge.make_ready_message()))
 
-    subscription_client = _get_subscription_client()
+    subscription_client = _get_subscription_client(websocket)
     if not subscription_client:
         await websocket.send_text(
             json.dumps(

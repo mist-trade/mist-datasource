@@ -19,6 +19,7 @@ class TDXSettings(BaseSettings):
     reconcile_interval_seconds: int = 60
     max_subscriptions: int = 100
     ws_queue_max_size: int = 1000
+    formula_timeout_ms: int = 10000
 
 
 class QMTSettings(BaseSettings):

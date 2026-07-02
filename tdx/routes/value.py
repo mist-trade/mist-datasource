@@ -4,22 +4,21 @@
 对应 TDX SDK: tqcenter.tq (get_bkjy_value, get_gpjy_value, get_scjy_value 等)
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+
+from tdx.routes.dependencies import get_tdx_adapter
 
 router = APIRouter()
 
 
-def _get_adapter():
-    """获取 TDX 适配器实例.
-
-    延迟导入避免循环依赖.
-    """
-    import tdx.main
-    return tdx.main.tdx_adapter
+def _get_adapter(request: Request):
+    """获取 TDX 适配器实例."""
+    return get_tdx_adapter(request)
 
 
 @router.get("/bkjy-value")
 async def get_bkjy_value(
+    request: Request,
     stocks: str = Query(..., description="逗号分隔的股票代码"),
     fields: str = Query(..., description="逗号分隔的字段名"),
     start_time: str = Query("", description="起始时间，格式 YYYYMMDD"),
@@ -32,7 +31,7 @@ async def get_bkjy_value(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -48,6 +47,7 @@ async def get_bkjy_value(
 
 @router.get("/bkjy-value-by-date")
 async def get_bkjy_value_by_date(
+    request: Request,
     stocks: str = Query(..., description="逗号分隔的股票代码"),
     fields: str = Query(..., description="逗号分隔的字段名"),
     year: int = Query(..., description="年份"),
@@ -60,7 +60,7 @@ async def get_bkjy_value_by_date(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -76,6 +76,7 @@ async def get_bkjy_value_by_date(
 
 @router.get("/gpjy-value")
 async def get_gpjy_value(
+    request: Request,
     stocks: str = Query(..., description="逗号分隔的股票代码"),
     fields: str = Query(..., description="逗号分隔的字段名"),
     start_time: str = Query("", description="起始时间，格式 YYYYMMDD"),
@@ -88,7 +89,7 @@ async def get_gpjy_value(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -104,6 +105,7 @@ async def get_gpjy_value(
 
 @router.get("/gpjy-value-by-date")
 async def get_gpjy_value_by_date(
+    request: Request,
     stocks: str = Query(..., description="逗号分隔的股票代码"),
     fields: str = Query(..., description="逗号分隔的字段名"),
     year: int = Query(..., description="年份"),
@@ -116,7 +118,7 @@ async def get_gpjy_value_by_date(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -132,6 +134,7 @@ async def get_gpjy_value_by_date(
 
 @router.get("/scjy-value")
 async def get_scjy_value(
+    request: Request,
     fields: str = Query(..., description="逗号分隔的字段名"),
     start_time: str = Query("", description="起始时间，格式 YYYYMMDD"),
     end_time: str = Query("", description="结束时间，格式 YYYYMMDD"),
@@ -143,7 +146,7 @@ async def get_scjy_value(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -158,6 +161,7 @@ async def get_scjy_value(
 
 @router.get("/scjy-value-by-date")
 async def get_scjy_value_by_date(
+    request: Request,
     fields: str = Query(..., description="逗号分隔的字段名"),
     year: int = Query(..., description="年份"),
     mmdd: int = Query(0, description="月日"),
@@ -169,7 +173,7 @@ async def get_scjy_value_by_date(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 

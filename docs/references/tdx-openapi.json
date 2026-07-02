@@ -471,7 +471,6 @@
             "type": "string"
           },
           "timeoutMs": {
-            "default": 10000,
             "title": "Timeoutms",
             "type": "integer"
           },
@@ -514,7 +513,6 @@
             "type": "string"
           },
           "timeoutMs": {
-            "default": 10000,
             "title": "Timeoutms",
             "type": "integer"
           },
@@ -553,7 +551,6 @@
             "type": "string"
           },
           "timeoutMs": {
-            "default": 10000,
             "title": "Timeoutms",
             "type": "integer"
           }
@@ -573,7 +570,6 @@
             "type": "string"
           },
           "timeoutMs": {
-            "default": 10000,
             "title": "Timeoutms",
             "type": "integer"
           }
@@ -602,7 +598,6 @@
             "type": "string"
           },
           "timeoutMs": {
-            "default": 10000,
             "title": "Timeoutms",
             "type": "integer"
           }
@@ -630,7 +625,6 @@
             "type": "string"
           },
           "timeoutMs": {
-            "default": 10000,
             "title": "Timeoutms",
             "type": "integer"
           }
@@ -679,7 +673,6 @@
             "type": "string"
           },
           "timeoutMs": {
-            "default": 10000,
             "title": "Timeoutms",
             "type": "integer"
           }
@@ -729,7 +722,6 @@
             "type": "string"
           },
           "timeoutMs": {
-            "default": 10000,
             "title": "Timeoutms",
             "type": "integer"
           }
@@ -1812,7 +1804,7 @@
     },
     "/api/tdx/exec-to-tdx": {
       "post": {
-        "description": "调用客户端功能接口.\n\n对应 TDX SDK: tq.exec_to_tdx(cmd, param)\n\n此接口可以触发通达信客户端的各种功能，如打开股票图表等.\n\nArgs:\n    request: 包含cmd和param的请求体\n\nReturns:\n    {\"data\": dict}",
+        "description": "调用客户端功能接口.\n\n对应 TDX SDK: tq.exec_to_tdx(cmd, param)\n\n此接口可以触发通达信客户端的各种功能，如打开股票图表等.\n\nArgs:\n    payload: 包含cmd和param的请求体\n\nReturns:\n    {\"data\": dict}",
         "operationId": "exec_to_tdx_api_tdx_exec_to_tdx_post",
         "requestBody": {
           "content": {

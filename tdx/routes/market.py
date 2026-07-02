@@ -4,22 +4,21 @@
 对应 TDX SDK: tqcenter.tq (get_stock_list_in_sector, get_market_data)
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+
+from tdx.routes.dependencies import get_tdx_adapter
 
 router = APIRouter()
 
 
-def _get_adapter():
-    """获取 TDX 适配器实例.
-
-    延迟导入避免循环依赖.
-    """
-    import tdx.main
-    return tdx.main.tdx_adapter
+def _get_adapter(request: Request):
+    """获取 TDX 适配器实例."""
+    return get_tdx_adapter(request)
 
 
 @router.get("/stock-list-in-sector")
 async def get_stock_list_in_sector(
+    request: Request,
     block_code: str = Query("通达信88", description="板块代码或名称"),
     block_type: int = Query(0, description="板块类型: 0=板块指数代码/名称, 1=自定义板块代码"),
     list_type: int = Query(0, description="返回类型: 0=只返回代码, 1=返回代码和名称"),
@@ -36,7 +35,7 @@ async def get_stock_list_in_sector(
     Returns:
         {"stocks": [...], "count": int}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -46,6 +45,7 @@ async def get_stock_list_in_sector(
 
 @router.get("/market-data")
 async def get_market_data(
+    request: Request,
     stocks: str = Query(..., description="逗号分隔的股票代码，如 SH600519,SZ000001"),
     fields: str = Query("Close", description="逗号分隔的字段名，如 Close,Open,Volume"),
     period: str = Query("1d", description="K线周期: 1d,1m,5m"),
@@ -63,7 +63,7 @@ async def get_market_data(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -86,6 +86,7 @@ async def get_market_data(
 
 @router.get("/market-snapshot")
 async def get_market_snapshot(
+    request: Request,
     stock_code: str = Query(..., description="股票代码，如 600519.SH"),
     fields: str = Query("", description="逗号分隔的字段名，留空返回所有字段"),
 ):
@@ -96,7 +97,7 @@ async def get_market_snapshot(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -111,6 +112,7 @@ async def get_market_snapshot(
 
 @router.get("/trading-dates")
 async def get_trading_dates(
+    request: Request,
     market: str = Query("SH", description="市场代码: SH/SZ"),
     start_time: str = Query("", description="起始时间，格式 YYYYMMDD"),
     end_time: str = Query("", description="结束时间，格式 YYYYMMDD"),
@@ -123,7 +125,7 @@ async def get_trading_dates(
     Returns:
         {"data": list[str]}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -136,6 +138,7 @@ async def get_trading_dates(
 
 @router.get("/divid-factors")
 async def get_divid_factors(
+    request: Request,
     stock_code: str = Query(..., description="股票代码，如 600519.SH"),
     start_time: str = Query("", description="起始时间，格式 YYYYMMDD"),
     end_time: str = Query("", description="结束时间，格式 YYYYMMDD"),
@@ -147,7 +150,7 @@ async def get_divid_factors(
     Returns:
         {"data": Any}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -160,6 +163,7 @@ async def get_divid_factors(
 
 @router.get("/gb-info")
 async def get_gb_info(
+    request: Request,
     stock_code: str = Query(..., description="股票代码，如 600519.SH"),
     date_list: str = Query("", description="逗号分隔的日期列表，格式 YYYYMMDD"),
     count: int = Query(1, description="返回数据个数"),
@@ -171,7 +175,7 @@ async def get_gb_info(
     Returns:
         {"data": list[dict]}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -186,6 +190,7 @@ async def get_gb_info(
 
 @router.post("/refresh-cache")
 async def refresh_cache(
+    request: Request,
     market: str = Query("AG", description="市场代码"),
     force: bool = Query(False, description="是否强制刷新"),
 ):
@@ -196,7 +201,7 @@ async def refresh_cache(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -209,6 +214,7 @@ async def refresh_cache(
 
 @router.post("/refresh-kline")
 async def refresh_kline(
+    request: Request,
     stock_list: str = Query("", description="逗号分隔的股票代码"),
     period: str = Query("1d", description="K线周期: 1d,1m,5m,15m,30m,60m"),
 ):
@@ -219,7 +225,7 @@ async def refresh_kline(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
@@ -234,6 +240,7 @@ async def refresh_kline(
 
 @router.post("/download-file")
 async def download_file(
+    request: Request,
     stock_code: str = Query("", description="股票代码"),
     down_time: str = Query("", description="下载时间，格式 YYYYMMDD"),
     down_type: int = Query(1, description="下载类型"),
@@ -245,7 +252,7 @@ async def download_file(
     Returns:
         {"data": dict}
     """
-    adapter = _get_adapter()
+    adapter = _get_adapter(request)
     if not adapter:
         raise HTTPException(status_code=503, detail="Adapter not initialized")
 
