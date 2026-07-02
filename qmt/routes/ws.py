@@ -20,7 +20,7 @@ import json
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 import qmt.main
-from src.ws.protocol import WSMessage
+from src.ws.protocol import WSMessage, ws_error, ws_pong, ws_subscription_ack
 
 router = APIRouter()
 
@@ -53,22 +53,30 @@ async def websocket_quote(websocket: WebSocket, client_id: str):
             message = json.loads(data)
 
             if message.get("type") == "ping":
-                await websocket.send_text(json.dumps({"type": "pong"}))
+                await websocket.send_text(ws_pong(provider="qmt").to_json())
             elif message.get("type") == "subscribe":
                 stocks = message.get("stocks", [])
                 adapter = qmt.main.qmt_adapter
                 if not adapter:
                     await websocket.send_text(
-                        json.dumps({"type": "error", "data": {"error": "Adapter not initialized"}})
+                        ws_error(
+                            provider="qmt",
+                            code="QMT_ADAPTER_UNAVAILABLE",
+                            message="Adapter not initialized",
+                            retryable=True,
+                            details={"clientId": client_id},
+                        ).to_json()
                     )
                     continue
 
                 await websocket.send_text(
-                    json.dumps({
-                        "type": "subscribed",
-                        "stocks": stocks,
-                        "message": f"Subscribed to {len(stocks)} stocks",
-                    })
+                    ws_subscription_ack(
+                        provider="qmt",
+                        msg_type="subscribed",
+                        accepted=list(stocks),
+                        rejected=[],
+                        active=list(stocks),
+                    ).to_json()
                 )
 
                 async for quote_data in adapter.subscribe_quote(stocks):
@@ -80,7 +88,13 @@ async def websocket_quote(websocket: WebSocket, client_id: str):
     except Exception as e:
         await qmt.main.ws_manager.disconnect(client_id)
         try:
-            error_msg = WSMessage(type="error", data={"error": str(e)})
+            error_msg = ws_error(
+                provider="qmt",
+                code="QMT_WS_INTERNAL_ERROR",
+                message=str(e),
+                retryable=True,
+                details={"clientId": client_id},
+            )
             await websocket.send_text(error_msg.to_json())
         except Exception:
             pass

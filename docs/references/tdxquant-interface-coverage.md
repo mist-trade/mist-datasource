@@ -7,6 +7,11 @@ NestJS on provider-neutral `/v1` datasource contracts. The target is broad
 coverage for non-trading data APIs. Trading/account execution APIs are outside
 the market datasource boundary.
 
+Legacy `/api/tdx/*` routes are migration-only compatibility surfaces; product
+callers use `/v1` normalized routes or the datasource WebSocket contract. New
+product integrations must not add dependencies on old bare-dict route
+responses.
+
 Related references:
 
 - Live smoke reference: `docs/references/tdxquant-live-datasource-smoke.md`

@@ -33,3 +33,59 @@ class WSMessage(BaseModel):
     def to_json(self) -> str:
         """Convert message to JSON string."""
         return self.model_dump_json(exclude_none=True)
+
+
+def ws_ready(provider: str, data: dict[str, Any]) -> WSMessage:
+    """Create a ready message for a datasource WebSocket connection."""
+    return WSMessage(type="ready", provider=provider, data=data)
+
+
+def ws_pong(provider: str) -> WSMessage:
+    """Create a heartbeat response message."""
+    return WSMessage(type="pong", provider=provider, data={})
+
+
+def ws_error(
+    *,
+    provider: str,
+    code: str,
+    message: str,
+    retryable: bool,
+    details: dict[str, Any] | None = None,
+) -> WSMessage:
+    """Create a machine-readable datasource WebSocket error."""
+    return WSMessage(
+        type="error",
+        provider=provider,
+        data={
+            "code": code,
+            "message": message,
+            "retryable": retryable,
+            "details": details or {},
+        },
+    )
+
+
+def ws_subscription_ack(
+    *,
+    provider: str,
+    msg_type: Literal["subscribed", "unsubscribed"],
+    accepted: list[str],
+    rejected: list[Any],
+    active: list[str],
+) -> WSMessage:
+    """Create a canonical subscription acknowledgement message."""
+    return WSMessage(
+        type=msg_type,
+        provider=provider,
+        data={
+            "accepted": accepted,
+            "rejected": rejected,
+            "active": active,
+        },
+    )
+
+
+def ws_quote(provider: str, data: dict[str, Any]) -> WSMessage:
+    """Create a quote event message."""
+    return WSMessage(type="quote", provider=provider, data=data)

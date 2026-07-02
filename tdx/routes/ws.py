@@ -35,6 +35,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from src.core.config import settings
 from src.datasource.tdx_bridge import TdxBridge
+from src.ws.protocol import ws_pong, ws_subscription_ack
 
 router = APIRouter()
 
@@ -79,16 +80,14 @@ def _subscription_response(
     rejected: list[str],
     active: list[str],
 ) -> dict[str, Any]:
-    return {
-        "type": msg_type,
-        "provider": "tdx",
-        "stocks": accepted,
-        "data": {
-            "accepted": accepted,
-            "rejected": rejected,
-            "active": active,
-        },
-    }
+    ack_type = "unsubscribed" if msg_type == "unsubscribed" else "subscribed"
+    return ws_subscription_ack(
+        provider="tdx",
+        msg_type=ack_type,
+        accepted=accepted,
+        rejected=rejected,
+        active=active,
+    ).model_dump(exclude_none=True)
 
 
 @router.websocket("/quote/{client_id}")
@@ -174,7 +173,7 @@ async def websocket_quote(websocket: WebSocket, client_id: str):
 
             if msg_type == "ping":
                 # 心跳响应
-                await websocket.send_text(json.dumps({"type": "pong"}))
+                await websocket.send_text(ws_pong(provider="tdx").to_json())
 
             elif msg_type in {"sync_subscriptions", "subscribe", "unsubscribe"}:
                 if not _is_leader(bridge, client_id):

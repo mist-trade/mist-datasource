@@ -176,6 +176,9 @@ def test_ws_ping_pong(client):
         ws.send_json({"type": "ping"})
         data = ws.receive_json()
         assert data["type"] == "pong"
+        assert data["provider"] == "tdx"
+        assert data["data"] == {}
+        assert "timestamp" in data
 
 
 def test_ws_subscribe_within_limit(client):
@@ -187,6 +190,8 @@ def test_ws_subscribe_within_limit(client):
         ws.send_json({"type": "subscribe", "stocks": stocks})
         data = ws.receive_json()
         assert data["type"] == "subscribed"
+        assert data["data"]["accepted"] == stocks
+        assert "stocks" not in data
 
 
 def test_ws_subscribe_exceeds_limit(client):
@@ -229,6 +234,8 @@ def test_ws_sends_ready_on_connect(client):
         data = ws.receive_json()
         assert data["type"] == "ready"
         assert data["provider"] == "tdx"
+        assert "timestamp" in data
+        assert "active" in data["data"]
 
 
 def test_ws_sync_subscriptions_returns_accepted_symbols(client):
@@ -248,7 +255,8 @@ def test_ws_rejects_non_leader_sync(client):
             follower.send_json({"type": "sync_subscriptions", "symbols": ["600519.SH"]})
             data = follower.receive_json()
             assert data["type"] == "error"
-            assert data["error"]["code"] == "DATASOURCE_WS_NOT_LEADER"
+            assert data["data"]["code"] == "DATASOURCE_WS_NOT_LEADER"
+            assert data["data"]["retryable"] is False
 
 
 def test_ws_rejects_duplicate_client_id_without_closing_original(client):
@@ -260,7 +268,8 @@ def test_ws_rejects_duplicate_client_id_without_closing_original(client):
 
         assert data["type"] == "error"
         assert data["provider"] == "tdx"
-        assert data["error"]["code"] == "DATASOURCE_WS_DUPLICATE_CLIENT"
+        assert data["data"]["code"] == "DATASOURCE_WS_DUPLICATE_CLIENT"
+        assert data["data"]["details"]["clientId"] == "same-client"
 
         original.send_json({"type": "ping"})
         assert original.receive_json()["type"] == "pong"
@@ -285,8 +294,8 @@ def test_ws_invalid_json_returns_structured_error(client):
 
     assert data["type"] == "error"
     assert data["provider"] == "tdx"
-    assert data["error"]["code"] == "DATASOURCE_WS_INVALID_MESSAGE"
-    assert data["error"]["retryable"] is False
+    assert data["data"]["code"] == "DATASOURCE_WS_INVALID_MESSAGE"
+    assert data["data"]["retryable"] is False
 
 
 def test_ws_rejects_non_list_symbols_payload(client):
@@ -297,7 +306,7 @@ def test_ws_rejects_non_list_symbols_payload(client):
 
     assert data["type"] == "error"
     assert data["provider"] == "tdx"
-    assert data["error"]["code"] == "DATASOURCE_WS_INVALID_SYMBOLS"
+    assert data["data"]["code"] == "DATASOURCE_WS_INVALID_SYMBOLS"
 
 
 def test_ws_subscription_commands_go_through_subscription_client(monkeypatch):
@@ -375,10 +384,14 @@ def test_ws_callback_marks_dirty_and_collector_emits_snapshot_quote(monkeypatch)
         assert status == "ok", payload
         assert payload["type"] == "quote"
         assert payload["provider"] == "tdx"
+        assert "timestamp" in payload
         assert payload["data"]["stock_code"] == "600519.SH"
         assert payload["data"]["snapshot"]["Code"] == "600519.SH"
         assert payload["data"]["snapshot"]["Now"] == 10.25
         assert payload["data"]["snapshot"]["LastClose"] == 9.95
+        assert "Last" not in payload["data"]["snapshot"]
+        assert "Max" not in payload["data"]["snapshot"]
+        assert "Min" not in payload["data"]["snapshot"]
         assert provider.snapshot_calls == [["600519.SH"]]
         assert provider.collect_calls == []
 
@@ -412,9 +425,14 @@ def test_ws_collector_publishes_snapshot_quote_only(monkeypatch):
         quote_payload = ws.receive_json()
 
     assert quote_payload["type"] == "quote"
+    assert quote_payload["provider"] == "tdx"
+    assert "timestamp" in quote_payload
     assert quote_payload["data"]["stock_code"] == "600519.SH"
     assert quote_payload["data"]["snapshot"]["Code"] == "600519.SH"
     assert quote_payload["data"]["snapshot"]["Now"] == 10.25
+    assert "Last" not in quote_payload["data"]["snapshot"]
+    assert "Max" not in quote_payload["data"]["snapshot"]
+    assert "Min" not in quote_payload["data"]["snapshot"]
     assert provider.snapshot_calls == [["600519.SH"]]
     assert provider.collect_calls == []
 
@@ -498,7 +516,7 @@ def test_ws_subscription_failure_restores_previous_active_state(monkeypatch):
         data = ws.receive_json()
 
         assert data["type"] == "error"
-        assert data["error"]["code"] == "TDX_SUBSCRIPTION_FAILED"
+        assert data["data"]["code"] == "TDX_SUBSCRIPTION_FAILED"
         assert adapter.subscribed == ["600519.SH"]
 
         health = callback_client.get("/health").json()

@@ -90,3 +90,11 @@ def test_qmt_alignment_reference_is_linked_from_coverage_matrix() -> None:
         "sector-members",
     ]:
         assert f"`{family}`" in qmt_text
+
+
+def test_old_tdx_routes_are_documented_as_migration_only() -> None:
+    text = " ".join(_coverage_text().split())
+
+    assert "`/api/tdx/*`" in text
+    assert "migration-only" in text
+    assert "product callers use `/v1`" in text

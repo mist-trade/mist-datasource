@@ -21,7 +21,7 @@ from src.datasource.tdx_models import TdxSnapshot
 from src.datasource.tdx_provider import TdxDatasourceProvider
 from src.datasource.tdx_subscription import TdxSubscriptionClient
 from src.ws.manager import ConnectionManager
-from src.ws.protocol import WSMessage
+from src.ws.protocol import ws_quote
 from tdx.routes.client import router as client_router
 from tdx.routes.etf import router as etf_router
 from tdx.routes.financial import router as financial_router
@@ -365,30 +365,25 @@ def _read_mapping_list(source: Mapping[str, Any], name: str) -> list[Any]:
 
 
 async def _publish_collector_snapshot(snapshot: TdxSnapshot) -> None:
-    await ws_manager.broadcast(
-        WSMessage(
-            type="quote",
-            provider="tdx",
-            data={
-                "stock_code": snapshot.symbol,
-                "snapshot": {
-                    "Code": snapshot.symbol,
-                    "Now": snapshot.last,
-                    "Last": snapshot.last,
-                    "Open": snapshot.open,
-                    "Max": snapshot.high,
-                    "High": snapshot.high,
-                    "Min": snapshot.low,
-                    "Low": snapshot.low,
-                    "LastClose": snapshot.lastClose,
-                    "Volume": snapshot.volume,
-                    "Amount": snapshot.amount,
-                    "Provider": snapshot.provider,
-                    "AsOf": snapshot.asOf,
-                },
-            },
-        )
-    )
+    await ws_manager.broadcast(ws_quote(provider="tdx", data=_serialize_snapshot_quote(snapshot)))
+
+
+def _serialize_snapshot_quote(snapshot: TdxSnapshot) -> dict[str, Any]:
+    return {
+        "stock_code": snapshot.symbol,
+        "snapshot": {
+            "Code": snapshot.symbol,
+            "Now": snapshot.last,
+            "Open": snapshot.open,
+            "High": snapshot.high,
+            "Low": snapshot.low,
+            "LastClose": snapshot.lastClose,
+            "Volume": snapshot.volume,
+            "Amount": snapshot.amount,
+            "Provider": snapshot.provider,
+            "AsOf": snapshot.asOf,
+        },
+    }
 
 
 app.include_router(v1_router, tags=["V1"])

@@ -8,6 +8,7 @@ from typing import Any
 
 from src.datasource.contracts import BEIJING_TZ
 from src.datasource.tdx_models import TdxBar
+from src.ws.protocol import ws_error, ws_ready
 
 
 @dataclass(slots=True)
@@ -160,16 +161,15 @@ class TdxBridge:
         }
 
     def make_ready_message(self) -> dict[str, Any]:
-        return {
-            "type": "ready",
-            "provider": "tdx",
-            "data": {
+        return ws_ready(
+            provider="tdx",
+            data={
                 "leaderClientId": self.leader_client_id,
                 "active": list(self.active_subscriptions),
                 "eventQueueDepth": self.event_queue_depth,
                 "eventQueueCapacity": self.event_queue_capacity,
             },
-        }
+        ).model_dump(exclude_none=True)
 
     def make_error_message(
         self,
@@ -179,17 +179,13 @@ class TdxBridge:
         details: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self.last_error_code = code
-        return {
-            "type": "error",
-            "provider": "tdx",
-            "message": message,
-            "error": {
-                "code": code,
-                "message": message,
-                "retryable": retryable,
-                "details": details or {},
-            },
-        }
+        return ws_error(
+            provider="tdx",
+            code=code,
+            message=message,
+            retryable=retryable,
+            details=details,
+        ).model_dump(exclude_none=True)
 
 
 def _dedupe_stable(symbols: Iterable[str]) -> list[str]:
