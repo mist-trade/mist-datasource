@@ -32,10 +32,21 @@ class TdxSymbolNotFoundError(Exception):
 
 
 class TdxMethodForbiddenError(Exception):
-    def __init__(self, *, method: str, reason: str = "Execution of trading or order management methods is forbidden") -> None:
+    def __init__(
+        self,
+        *,
+        method: str,
+        reason: str = "family_forbidden",
+    ) -> None:
+        # reason ∈ {"family_forbidden", "unclassified"}（admin guard 判定输出）
+        code = (
+            "TDX_METHOD_UNCLASSIFIED"
+            if reason == "unclassified"
+            else "TDX_METHOD_FAMILY_FORBIDDEN"
+        )
         message = f"Method '{method}' is forbidden: {reason}"
         super().__init__(message)
-        self.code = "TDX_METHOD_FORBIDDEN"
+        self.code = code
         self.message = message
         self.retryable = False
         self.details = {

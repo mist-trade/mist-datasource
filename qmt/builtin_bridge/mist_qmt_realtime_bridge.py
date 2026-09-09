@@ -11,6 +11,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import socket
 import struct
 import time
@@ -112,7 +113,20 @@ STATE.send_dropped = 0
 STATE.send_failures = 0
 STATE.callback_holders = {}
 
-BRIDGE_BUILD_ID = "mist-qmt-realtime-bridge-v3.0"
+BRIDGE_BUILD_ID = "mist-qmt-realtime-bridge-v3.1"
+
+# call_native hard deny: trading/account method patterns are rejected in-bridge
+# regardless of the datasource classification guard (terminal has no trading
+# permission enabled; keep this invariant independent of terminal state).
+TRADING_DENY_PATTERNS: Tuple[str, ...] = (
+    "passorder",
+    "trade",
+    "order_",
+    "cancel_order",
+    "withdraw",
+    "account",
+)
+_NATIVE_METHOD_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
 BRIDGE_QUEUE_MAX = 1000
 BRIDGE_QUEUE: deque = deque(maxlen=BRIDGE_QUEUE_MAX)  # thin callback → main-thread drain
@@ -712,6 +726,53 @@ def _execute_history_command(
             _log_call_start("get_stock_list_in_sector", command, params)
             data = ContextInfo.get_stock_list_in_sector(params.get("sector", "\u6caa\u6df1A\u80a1"))
             _log_call_ok("get_stock_list_in_sector", command)
+            return {"ok": True, "result": _history_json_safe(data)}
+        if method == "call_native":
+            _log_call_start("call_native", command, params)
+            native_method = params.get("method")
+            if (
+                not isinstance(native_method, str)
+                or not _NATIVE_METHOD_NAME_RE.match(native_method)
+            ):
+                return {
+                    "ok": False,
+                    "error": {
+                        "code": "QMT_ADMIN_METHOD_INVALID",
+                        "message": "call_native requires a native method name",
+                        "retryable": False,
+                        "details": {"method": native_method},
+                    },
+                }
+            lowered = native_method.strip().lower()
+            for pattern in TRADING_DENY_PATTERNS:
+                if pattern in lowered:
+                    return {
+                        "ok": False,
+                        "error": {
+                            "code": "QMT_ADMIN_METHOD_FORBIDDEN",
+                            "message": "call_native cannot invoke trading or account methods",
+                            "retryable": False,
+                            "details": {
+                                "method": native_method,
+                                "pattern": pattern,
+                            },
+                        },
+                    }
+            native_callable = getattr(ContextInfo, native_method, None)
+            if not callable(native_callable):
+                return {
+                    "ok": False,
+                    "error": {
+                        "code": "QMT_ADMIN_METHOD_UNKNOWN",
+                        "message": "ContextInfo has no such method",
+                        "retryable": False,
+                        "details": {"method": native_method},
+                    },
+                }
+            kwargs_value = params.get("kwargs")
+            kwargs = kwargs_value if isinstance(kwargs_value, dict) else {}
+            data = native_callable(**kwargs)
+            _log_call_ok("call_native", command)
             return {"ok": True, "result": _history_json_safe(data)}
         return {
             "ok": False,

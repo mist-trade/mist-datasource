@@ -13,6 +13,7 @@ from src.datasource.contracts import (
     ResponseMeta,
     serialize_response_data,
 )
+from src.datasource.metrics import record_admin_call
 from src.datasource.qmt.operations.market import QmtBridgeError
 from src.datasource.qmt.provider import QmtDatasourceProvider
 from src.datasource.qmt.realtime.gateway import QmtCommandGateway
@@ -134,4 +135,61 @@ async def query_bars(payload: QmtBarQueryRequest, request: Request):
         )
     except QmtBridgeError as exc:
         return _failure(request, exc)
+    return _success(request, result)
+
+
+class QmtAdminCallRequest(QmtV1Model):
+    """Admin escape hatch: execute a classified ContextInfo method.
+
+    ``params`` is forwarded to the native method as keyword arguments. The
+    classification guard (unclassified / trading-account deny families) is
+    enforced in ``QmtDatasourceProvider.admin_call_native`` plus an in-bridge
+    trading hard-deny (bridge v3.1).
+    """
+
+    method: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    timeout_ms: int = Field(default=600000, ge=1, le=1800000)
+
+
+def _admin_result_from_error(exc: QmtBridgeError) -> str:
+    if exc.code == "QMT_METHOD_UNCLASSIFIED":
+        return "denied_unclassified"
+    if exc.code == "QMT_METHOD_FAMILY_FORBIDDEN":
+        return "denied_forbidden"
+    if exc.code == "QMT_ADMIN_CALL_TIMEOUT":
+        return "timeout"
+    return "failed"
+
+
+def _bounded_admin_method(method: str) -> str:
+    normalized = (method or "").strip().lower()
+    if not normalized:
+        return "unclassified"
+    return normalized[:64]
+
+
+@router.post("/v1/raw/qmt/call")
+async def raw_qmt_call(payload: QmtAdminCallRequest, request: Request):
+    provider = _get_provider(request)
+    gateway = _get_gateway(request)
+    if provider is None or gateway is None:
+        return ResponseEnvelope.failure(
+            request_id=_request_id(request),
+            provider="qmt",
+            error=_provider_unavailable(),
+            meta=_meta(),
+        )
+
+    try:
+        result = await provider.admin_call_native(
+            payload.method,
+            payload.params,
+            command_gateway=gateway,
+            timeout_seconds=payload.timeout_ms / 1000,
+        )
+    except QmtBridgeError as exc:
+        record_admin_call("qmt", _bounded_admin_method(payload.method), _admin_result_from_error(exc))
+        return _failure(request, exc)
+    record_admin_call("qmt", _bounded_admin_method(payload.method), "ok")
     return _success(request, result)

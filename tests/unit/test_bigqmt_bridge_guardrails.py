@@ -1,4 +1,5 @@
 import ast
+import re
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -151,7 +152,7 @@ def test_builtin_bridge_exposes_read_only_runtime_introspection() -> None:
     )
 
     assert result["ok"] is True
-    assert result["result"]["bridgeBuildId"] == "mist-qmt-realtime-bridge-v3.0"
+    assert result["result"]["bridgeBuildId"] == "mist-qmt-realtime-bridge-v3.1"
     assert len(result["result"]["bridgeRuntimeFingerprint"]) == 64
     assert result["result"]["methods"]["subscribe_quote"]["available"] is True
 
@@ -257,19 +258,77 @@ def test_qmt_account_and_trading_methods_are_not_exposed_by_market_datasource() 
         PROJECT_ROOT / "src" / "adapter" / "qmt",
     ]
 
+    # The in-bridge trading hard-deny patterns (call_native guard, v3.1) quote
+    # the forbidden names in order to REJECT them — that is enforcement, not
+    # exposure. Strip the deny-pattern definition before scanning so the scan
+    # continues to detect actual call sites.
+    deny_block_re = re.compile(
+        r"TRADING_DENY_PATTERNS: Tuple\[str, \.\.\.\] = \([^)]*\)",
+        re.DOTALL,
+    )
+
     violations: list[str] = []
+    # Governance surfaces that quote forbidden names in order to REJECT them:
+    # - qmt/classification.py maps passorder → trading family (deny reason)
+    # - the bridge's TRADING_DENY_PATTERNS block strips them before execution
+    governance_exempt = {"src/datasource/qmt/classification.py"}
     for root in source_roots:
         if not root.exists():
             continue
         for path in root.rglob("*.py"):
             if path.name == "mist_qmt_runtime_probe.py":
                 continue
+            relative = path.relative_to(PROJECT_ROOT).as_posix()
+            if relative in governance_exempt:
+                continue
             text = path.read_text(encoding="utf-8")
+            scanned = deny_block_re.sub("TRADING_DENY_PATTERNS = ()", text)
             for method_name in forbidden_method_names:
-                if method_name in text:
-                    violations.append(f"{path.relative_to(PROJECT_ROOT)} contains {method_name}")
+                if method_name in scanned:
+                    violations.append(f"{relative} contains {method_name}")
 
     assert violations == []
+
+
+def test_call_native_hard_denies_trading_and_account_methods() -> None:
+    source = BRIDGE_SCRIPT.read_text(encoding="utf-8")
+    namespace = {"__name__": "mist_qmt_realtime_bridge_embedded"}
+    exec(compile(source, BRIDGE_SCRIPT.name, "exec"), namespace)
+
+    class EmbeddedContext:
+        def __init__(self) -> None:
+            self.executed: list[str] = []
+
+        def get_local_data(self):
+            self.executed.append("get_local_data")
+            return {"ok": True}
+
+        def passorder(self):
+            self.executed.append("passorder")
+            return {"placed": True}
+
+        def stock_account(self):
+            self.executed.append("stock_account")
+            return {"account": True}
+
+    for forbidden in ("passorder", "stock_account", "cancel_order_stock"):
+        result = namespace["_execute_history_command"](
+            EmbeddedContext(),
+            {"method": "call_native", "params": {"method": forbidden}},
+        )
+        assert result["ok"] is False
+        assert result["error"]["code"] == "QMT_ADMIN_METHOD_FORBIDDEN"
+
+    allowed_context = EmbeddedContext()
+    allowed = namespace["_execute_history_command"](
+        allowed_context,
+        {
+            "method": "call_native",
+            "params": {"method": "get_local_data", "kwargs": {}},
+        },
+    )
+    assert allowed["ok"] is True
+    assert allowed_context.executed == ["get_local_data"]
 
 
 def test_qmt_local_dat_binary_parsing_stays_out_of_qmt_v1_routes() -> None:

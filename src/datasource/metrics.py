@@ -80,6 +80,10 @@ def init_metrics() -> None:
         "mist_datasource_auto_unlock_total",
         description="QMT reconciliation auto-unlock attempts (objective terminal restart evidence)",
     )
+    _INSTRUMENTS["admin_call"] = m.create_counter(
+        "mist_datasource_admin_call_total",
+        description="Admin escape-hatch calls per source, method and result",
+    )
 
 
 def register_snapshot_age_callback(source: str, factory: Callable[[], float | None]) -> None:
@@ -192,4 +196,17 @@ def record_auto_unlock(source: str, outcome: str) -> None:
     inst = _INSTRUMENTS.get("auto_unlock")
     if inst is not None:
         inst.add(1, {"source": source, "outcome": outcome})
+
+
+def record_admin_call(source: str, method: str, result: str) -> None:
+    """Record admin escape-hatch calls.
+
+    result is a bounded enum: ok | timeout | failed |
+    denied_unclassified | denied_forbidden | in_session | disabled.
+    method cardinality is bounded: only classified method names; unclassified
+    calls are recorded as method="unclassified".
+    """
+    inst = _INSTRUMENTS.get("admin_call")
+    if inst is not None:
+        inst.add(1, {"source": source, "method": method, "result": result})
 

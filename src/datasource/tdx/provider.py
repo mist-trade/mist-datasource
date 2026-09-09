@@ -1,6 +1,14 @@
 from typing import Any
 
 from src.core.config import settings
+from src.datasource import metrics as ds_metrics
+from src.datasource.admin.guard import AdminGuard
+from src.datasource.tdx.classification import (
+    TDX_CLASSIFICATION as TDX_CLASSIFICATION,
+)
+from src.datasource.tdx.classification import (
+    TDX_DENIED_FAMILIES as TDX_DENIED_FAMILIES,
+)
 from src.datasource.tdx.errors import (
     TdxMethodForbiddenError as TdxMethodForbiddenError,
 )
@@ -26,37 +34,6 @@ from src.datasource.tdx.operations.sector import TdxSectorOperations
 
 TDX_HEALTH_PROBE_SYMBOL = "600519.SH"
 
-FORBIDDEN_RAW_METHODS: set[str] = {
-    "order_stock",
-    "cancel_order",
-    "send_order",
-    "buy_stock",
-    "sell_stock",
-    "cancel_order_stock",
-    "query_order",
-    "query_trade",
-    "query_capital",
-    "query_position",
-    "query_account",
-    "query_asset",
-    "query_deal",
-    "get_orders",
-    "get_positions",
-    "get_capital",
-    "get_account_data",
-    "get_trade_account",
-}
-
-FORBIDDEN_RAW_PREFIXES: tuple[str, ...] = (
-    "order_",
-    "buy_",
-    "sell_",
-    "cancel_order",
-    "send_order",
-    "entrust_",
-    "withdraw_",
-)
-
 __all__ = [
     "TdxDatasourceProvider",
     "TdxFormulaRequestLimitError",
@@ -73,6 +50,9 @@ class TdxDatasourceProvider:
         self._market = TdxMarketOperations(self.client)
         self._reference = TdxReferenceOperations(self.client)
         self._finance = TdxFinanceOperations(self.client)
+        self._admin_guard = AdminGuard(
+            "tdx", TDX_CLASSIFICATION, TDX_DENIED_FAMILIES
+        )
         self._sector = TdxSectorOperations(self.client)
         self._formula = TdxFormulaOperations(self.client)
 
@@ -347,13 +327,28 @@ class TdxDatasourceProvider:
         )
 
     async def raw_call(self, method: str, params: dict[str, Any] | list[Any] | None = None) -> Any:
-        normalized_method = (method or "").strip().lower()
-        if (
-            normalized_method in FORBIDDEN_RAW_METHODS
-            or any(normalized_method.startswith(prefix) for prefix in FORBIDDEN_RAW_PREFIXES)
-        ):
-            raise TdxMethodForbiddenError(method=method)
-        return await self.client.call(method, params)
+        verdict = self._admin_guard.evaluate(method)
+        if not verdict.allowed:
+            if verdict.reason == "unclassified":
+                ds_metrics.record_admin_call("tdx", "unclassified", "denied_unclassified")
+            else:
+                ds_metrics.record_admin_call(
+                    "tdx",
+                    (method or "").strip().lower(),
+                    "denied_forbidden",
+                )
+            raise TdxMethodForbiddenError(
+                method=method, reason=verdict.reason or "family_forbidden"
+            )
+        try:
+            result = await self.client.call(method, params)
+        except Exception:
+            ds_metrics.record_admin_call(
+                "tdx", (method or "").strip().lower(), "failed"
+            )
+            raise
+        ds_metrics.record_admin_call("tdx", (method or "").strip().lower(), "ok")
+        return result
 
     async def get_sector_list(self, list_type: int = 0) -> list[dict[str, Any]]:
         return await self._sector.get_sector_list(list_type)

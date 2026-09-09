@@ -166,6 +166,7 @@ class QmtCommandGateway:
                 "max_retained_result_bytes cannot reserve every terminal result"
             )
         self._owner: QmtBridgeOwner | None = None
+        self._busy_until: float = 0.0
         self._pending: deque[QmtCommand] = deque()
         self._in_flight: dict[str, _InFlightCommand] = {}
         self._results: dict[str, _StoredResult] = {}
@@ -502,9 +503,28 @@ class QmtCommandGateway:
         }
 
     def _owner_is_stale(self, now: float) -> bool:
-        return bool(
-            self._owner and now - self._owner.last_heartbeat_at > self._owner_stale_after_seconds
+        if not self._owner:
+            return False
+        heartbeat_stale = (
+            now - self._owner.last_heartbeat_at > self._owner_stale_after_seconds
         )
+        # In-flight long-running commands (admin call_native, history download)
+        # block the bridge main loop, which is expected behavior rather than
+        # terminal death — extend the lease deadline while they are outstanding
+        # (design D4 of unify-terminal-admin-surface-guards).
+        if heartbeat_stale and now < self._busy_until:
+            return False
+        return bool(heartbeat_stale)
+
+    def extend_busy_until(self, seconds: float) -> float:
+        """Extend the owner lease grace for a long-running in-flight command.
+
+        同步长命令（admin call_native / 历史下载）会阻塞桥主循环轮询，与
+        "终端死亡"在心跳上不可区分；在途窗口内 owner 新鲜度按 busy_until 放行。
+        """
+        deadline = self._clock() + _positive_finite("seconds", seconds)
+        self._busy_until = max(self._busy_until, deadline)
+        return self._busy_until
 
     def _fail_commands_for_replaced_owner(self, now: float) -> None:
         commands = [*self._pending, *(item.command for item in self._in_flight.values())]

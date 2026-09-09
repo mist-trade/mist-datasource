@@ -266,6 +266,10 @@ async def test_provider_facade_exposes_representative_product_debug_and_lifecycl
                 }
             },
             "raw_debug": {"ok": True},
+            "refresh_kline": {
+                "ErrorId": "0",
+                "Msg": "refresh kline cache success.",
+            },
         }
     )
     provider = TdxDatasourceProvider(fake_client)
@@ -279,27 +283,27 @@ async def test_provider_facade_exposes_representative_product_debug_and_lifecycl
     )
     sector = (await provider.get_sector_list(1))[0]
     formula = await provider.format_formula_data({"688318.SH": [{"Close": 144.4}]})
-    raw = await provider.raw_call("raw_debug", {"x": 1})
+    raw = await provider.raw_call("refresh_kline", {"stock_list": ["600519.SH"]})
     health = await provider.health()
     await provider.aclose()
 
     assert financial[0]["field"] == "FN193"
     assert sector["code"] == "880081.SH"
     assert formula[0]["symbol"] == "688318.SH"
-    assert raw == {"ok": True}
+    assert raw == {"ErrorId": "0", "Msg": "refresh kline cache success."}
     assert health == {"tdxHttpReachable": True, "lastError": None}
     assert fake_client.closed is True
 
 
 @pytest.mark.asyncio
 async def test_raw_call_proxies_exact_method_and_params():
-    fake_client = FakeTdxHttpClient({"some_method": {"ok": True}})
+    fake_client = FakeTdxHttpClient({"refresh_kline": {"ok": True}})
     provider = TdxDatasourceProvider(fake_client)
 
-    result = await provider.raw_call("some_method", {"x": 1})
+    result = await provider.raw_call("refresh_kline", {"x": 1})
 
     assert result == {"ok": True}
-    assert fake_client.calls == [("some_method", {"x": 1})]
+    assert fake_client.calls == [("refresh_kline", {"x": 1})]
 
 
 @pytest.mark.asyncio
@@ -307,26 +311,52 @@ async def test_raw_call_proxies_exact_method_and_params():
     "forbidden_method",
     [
         "order_stock",
-        "cancel_order",
-        "send_order",
-        "buy_stock",
-        "sell_stock",
+        "cancel_order_stock",
+        "stock_account",
+        "query_stock_asset",
+        "query_stock_orders",
+        "query_stock_positions",
         "ORDER_STOCK",
-        "order_limit_price",
-        "withdraw_order",
-        "query_account",
-        "get_positions",
     ],
 )
-async def test_raw_call_blocks_forbidden_trading_methods(forbidden_method: str):
+async def test_raw_call_blocks_classified_trading_and_account_methods(
+    forbidden_method: str,
+):
     fake_client = FakeTdxHttpClient({})
     provider = TdxDatasourceProvider(fake_client)
 
     with pytest.raises(TdxMethodForbiddenError) as exc_info:
         await provider.raw_call(forbidden_method, {"stock": "600519"})
 
-    assert exc_info.value.code == "TDX_METHOD_FORBIDDEN"
+    assert exc_info.value.code == "TDX_METHOD_FAMILY_FORBIDDEN"
     assert exc_info.value.details["method"] == forbidden_method
+    assert fake_client.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "unclassified_method",
+    [
+        "cancel_order",
+        "send_order",
+        "buy_stock",
+        "sell_stock",
+        "order_limit_price",
+        "withdraw_order",
+        "query_account",
+        "get_positions",
+        "some_other_method",
+    ],
+)
+async def test_raw_call_blocks_unclassified_methods(unclassified_method: str):
+    fake_client = FakeTdxHttpClient({})
+    provider = TdxDatasourceProvider(fake_client)
+
+    with pytest.raises(TdxMethodForbiddenError) as exc_info:
+        await provider.raw_call(unclassified_method, {"stock": "600519"})
+
+    assert exc_info.value.code == "TDX_METHOD_UNCLASSIFIED"
+    assert exc_info.value.details["method"] == unclassified_method
     assert fake_client.calls == []
 
 

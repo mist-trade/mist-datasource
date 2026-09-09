@@ -5,6 +5,25 @@ from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+class QMTSettings(BaseSettings):
+    """QMT Instance settings."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="QMT_", env_file=".env", case_sensitive=False, extra="ignore"
+    )
+    host: str = "0.0.0.0"
+    port: int = 9002
+    bridge_gateway_url: str = "http://127.0.0.1:9002/qmt/bridge"
+    realtime_mode: Literal["off", "builtin"] = "builtin"
+    # E: persistent TCP ingestion endpoint for bridge frames.
+    realtime_tcp_host: str = "0.0.0.0"
+    realtime_tcp_port: int = 9004
+    # Admin escape hatch (/v1/raw/qmt/call) execution budget. Generous by
+    # design: first-time/large-range downloads can be slow (user judgement:
+    # fixed 240s-style budgets are insufficient).
+    admin_call_timeout_ms: int = 600000
+
+
 class TDXSettings(BaseSettings):
     """TDX Instance settings."""
 
@@ -20,21 +39,6 @@ class TDXSettings(BaseSettings):
     # E: persistent TCP ingestion endpoint for bridge frames.
     realtime_tcp_host: str = "0.0.0.0"
     realtime_tcp_port: int = 9003
-
-
-class QMTSettings(BaseSettings):
-    """QMT Instance settings."""
-
-    model_config = SettingsConfigDict(
-        env_prefix="QMT_", env_file=".env", case_sensitive=False, extra="ignore"
-    )
-    host: str = "0.0.0.0"
-    port: int = 9002
-    bridge_gateway_url: str = "http://127.0.0.1:9002/qmt/bridge"
-    realtime_mode: Literal["off", "builtin"] = "builtin"
-    # E: persistent TCP ingestion endpoint for bridge frames.
-    realtime_tcp_host: str = "0.0.0.0"
-    realtime_tcp_port: int = 9004
 
 
 class AppSettings(BaseSettings):
