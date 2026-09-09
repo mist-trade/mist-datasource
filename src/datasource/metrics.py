@@ -201,7 +201,7 @@ def record_auto_unlock(source: str, outcome: str) -> None:
 def record_admin_call(source: str, method: str, result: str) -> None:
     """Record admin escape-hatch calls.
 
-    result is a bounded enum: ok | timeout | failed |
+    result is a bounded enum: ok | timeout | failed | unsupported |
     denied_unclassified | denied_forbidden | in_session | disabled.
     method cardinality is bounded: only classified method names; unclassified
     calls are recorded as method="unclassified".

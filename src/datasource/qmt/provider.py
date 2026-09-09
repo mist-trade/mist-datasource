@@ -73,6 +73,21 @@ class QmtDatasourceProvider:
             if result is None:
                 await asyncio.sleep(0.05)
                 continue
+            if not result.ok:
+                # Native execution failed (e.g. QMT_COMMAND_UNSUPPORTED on a
+                # pre-v3.1 bridge) — surface as a route-visible failure so the
+                # admin counter records it and the envelope stays honest.
+                raise QmtBridgeError(
+                    code=(result.error or {}).get("code", "QMT_ADMIN_CALL_FAILED"),
+                    message=(result.error or {}).get(
+                        "message", "QMT admin call failed in bridge"
+                    ),
+                    retryable=bool((result.error or {}).get("retryable", False)),
+                    details={
+                        "method": method,
+                        "nativeError": result.error,
+                    },
+                )
             return {
                 "method": method,
                 "result": result.result,

@@ -159,6 +159,8 @@ def _admin_result_from_error(exc: QmtBridgeError) -> str:
         return "denied_forbidden"
     if exc.code == "QMT_ADMIN_CALL_TIMEOUT":
         return "timeout"
+    if exc.code == "QMT_COMMAND_UNSUPPORTED":
+        return "unsupported"
     return "failed"
 
 
