@@ -45,11 +45,11 @@
 - [x] 4.1 `[mist-datasource]` CI 全绿（pyright/pylint 全仓 + 单测 + 集成）；
   compose/env 增加 `QMT_ADMIN_CALL_TIMEOUT_MS`/`TDX_ADMIN_CALL_TIMEOUT_MS`
   （mist-deploy defaults + test 断言，参照 NOTIFICATION_CHANNELS 模式）。
-- [ ] 4.2 `[deploy]` 部署 datasource 容器（TDX raw 守卫即时生效；QMT admin 路由
+- [x] 4.2 `[deploy]` 部署 datasource 容器（TDX raw 守卫即时生效；QMT admin 路由
   就绪待 v3.1 桥）。
-- [ ] 4.3 `[hil]` 用户手动 copy 新 QMT 桥（v3.1，仅 call_native）+ 重启终端
+- [x] 4.3 `[hil]` 用户手动 copy 新 QMT 桥（v3.1，仅 call_native）+ 重启终端
   （避开交易时段）；验证 `bridgeBuildId=v3.1`、实时流无中断。
-- [ ] 4.4 `[hil]` 验证矩阵：TDX raw 放行（get_market_data/refresh_kline/
+- [x] 4.4 `[hil]` 验证矩阵：TDX raw 放行（get_market_data/refresh_kline/
   refresh_cache）、未分类拒、拒绝族拒；QMT call_native 实跑（分类安全方法）；
   busy_until（在途不误判死亡）。
 - [ ] 4.5 `[mist-datasource]` 联动：`add-qmt-history-download` 接力（其 v3.2 桥
