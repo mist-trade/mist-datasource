@@ -5,7 +5,7 @@
 （两步、可 review）。未收录的方法 = unclassified = admin 面一律拒绝。
 """
 
-from src.datasource.admin.guard import AdminGuardResult, AdminGuard
+from src.datasource.admin.guard import AdminGuard, AdminGuardResult
 
 # family 枚举（coverage "Endpoint family" 归组）：
 #   market / calendar / reference / finance / formula /

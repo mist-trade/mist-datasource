@@ -48,7 +48,7 @@ def test_evaluation_normalizes_case_and_whitespace():
 
 
 def test_denied_families_are_exactly_the_documented_set():
-    assert QMT_DENIED_FAMILIES == frozenset(
+    assert frozenset(
         {"trading", "account", "realtime_internal"}
-    )
+    ) == QMT_DENIED_FAMILIES
     assert QMT_CLASSIFICATION["passorder"] == "trading"

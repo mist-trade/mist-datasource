@@ -64,9 +64,9 @@ def test_example_helper_and_unknown_methods_are_denied():
 
 
 def test_denied_families_are_exactly_the_documented_set():
-    assert TDX_DENIED_FAMILIES == frozenset(
+    assert frozenset(
         {"trading", "account", "realtime_internal", "example_helper"}
-    )
+    ) == TDX_DENIED_FAMILIES
 
 
 def test_classification_map_covers_the_documented_surface():
