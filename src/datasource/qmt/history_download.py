@@ -97,6 +97,7 @@ class QmtHistoryDownloadRegistry:
         }
 
     def job_status(self, job_id: str) -> dict[str, Any] | None:
+        self._cleanup(self._clock())
         job = self._jobs.get(job_id)
         if job is None:
             return None
