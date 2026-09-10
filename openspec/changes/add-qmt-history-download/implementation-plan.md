@@ -56,12 +56,12 @@ class QmtHistoryDownloadRegistry:
 ## 2. datasource 路由（`qmt/routes/v1/product.py`）
 
 ### 2.1 新增
-- `POST /v1/raw/qmt/download`：
+- `POST /v1/qmt/download`：
   `QmtDownloadJobRequest {stock_list, base_periods, start_time, end_time}`
   → ActivityWindow.in_window() → `in_session` 拒绝；
   `settings.qmt.download_job_enabled=off` → `disabled` 拒绝；
   否则 `registry.submit(...)` → `_success({job_id, tasks})`。
-- `GET /v1/raw/qmt/download/{job_id}` → `_success(registry.job_status(...))`；
+- `GET /v1/qmt/download/{jobId}` → `_success(registry.job_status(...))`；
   未知 job_id → 404 语义 failure。
 
 ### 2.2 移除（call_native 退役，REMOVED delta 对应）
@@ -92,7 +92,7 @@ class QmtHistoryDownloadRegistry:
 
 ### 4.1 新增 `apps/mist/src/collector/history-download.client.ts`
 - `submitDownloadJob(securities, basePeriods, window)` → axios POST
-  `/v1/raw/qmt/download`（timeout 10s）→ `{jobId, tasks}`；
+  `/v1/qmt/download`（timeout 10s）→ `{jobId, tasks}`；
 - `pollDownloadJob(jobId)` → axios GET（间隔 5–10s，预算
   `QMT_DOWNLOAD_JOB_BUDGET_MS` 默认 600000）→ 聚合状态。
 

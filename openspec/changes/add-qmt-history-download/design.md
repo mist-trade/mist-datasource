@@ -22,25 +22,31 @@ backend CollectorService.collectK / PostCloseSync
 
 ## 2. 关键决策
 
-### D1 下载与读取解耦：统计缺失 → 下载 → 完成后获取（用户决策）
+### D1 采集前置四步判定：统计缺失 → 真实数据过滤 → 下载 → 采集落库（用户决策 2026-09-09 晚修订）
 
-bars/query 回归**纯读取**（30s 超时恢复够用；D9 旧"backend 超时对齐"作废）。
-下载是采集流程的**显式阶段**，由 backend collector 编排：
+bars/query 回归**纯读取**（30s 超时恢复够用）。下载是采集流程的**显式阶段**，
+由 backend collector 编排。每个 (标的 × 周期 × 交易日) 在采集前走判定树：
 
 ```
-① 统计缺失：查 k 表，枚举 (标的 × 基础周期 1m/5m/1d × 日期窗) 缺口
-② 提交下载：POST /v1/raw/qmt/download → job（桥串行执行）→ 立即返回
-③ 轮询完成：GET /v1/raw/qmt/download/{job} 直至全部完成（有界退避）
-④ 获取K线：既有 bars/query 逐任务采集（缓存命中，快）→ upsert
+① 已采集？      k 表该窗已有行 → 直接采集落库
+② 真实数据判定  当日是否交易日（日历）→ 非交易日 → 无真实数据 → 跳过（不算缺口）
+③ 缺 → 下载    调下载接口（QMT job / TDX refresh_kline 端点）→ 填充终端本地缓存
+④ 采集落库      bars/query 读缓存 → upsert；仍无数据 → 当日无真实数据
+                （疑似停牌）→ info 记录，不算 notReady 失败（停牌股每夜报缺口是噪声）
 ```
+
+- **真实数据判定的两层**：交易日前置过滤（日历，①之前）+ 下载后验证（③之后仍空
+  → 疑似停牌，info 不告警）。停牌无法在下载前可靠判定（数据源无停牌状态 API），
+  以"下载后仍空"事后归类。
+- **下载与读取解耦**：bars/query 纯读；下载经 datasource 下载端点显式提交。
 
 ### D2 异步 job 端点（不等待、不挂请求，用户决策）
 
-- `POST /v1/raw/qmt/download`：校验（stock_list 格式、base_periods ⊆ {1m,5m,1d}、
+- `POST /v1/qmt/download`：校验（stock_list 格式、base_periods ⊆ {1m,5m,1d}、
   数量 ≤ 64、日期窗合法）→ 创建 in-memory job（任务 = (symbol × base period) 组合，
   经命令网关让桥**串行**执行原生 `download_history_data`）→ 立即返回
   `{job_id, tasks}`；
-- `GET /v1/raw/qmt/download/{job_id}`：逐任务状态（pending/running/done/failed）+
+- `GET /v1/qmt/download/{jobId}`：逐任务状态（pending/running/done/failed）+
   聚合（all_done / any_failed）；
 - job 完成（全部任务终态）后保留结果供查询（TTL，如 1h）；
 - **盘中硬门禁**（ActivityWindow）内拒绝提交（counter `in_session`）。

@@ -119,7 +119,6 @@ BRIDGE_BUILD_ID = "mist-qmt-realtime-bridge-v3.2"
 # the framework-injected script globals (production probe 2026-09-09 verified
 # download_history_data lives on the globals surface, not ContextInfo).
 _INTROSPECTION_SURFACES = ("contextinfo", "globals")
-_NATIVE_METHOD_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
 BRIDGE_QUEUE_MAX = 1000
 BRIDGE_QUEUE: deque = deque(maxlen=BRIDGE_QUEUE_MAX)  # thin callback → main-thread drain

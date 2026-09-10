@@ -508,10 +508,9 @@ class QmtCommandGateway:
         heartbeat_stale = (
             now - self._owner.last_heartbeat_at > self._owner_stale_after_seconds
         )
-        # In-flight long-running commands (admin call_native, history download)
-        # block the bridge main loop, which is expected behavior rather than
-        # terminal death — extend the lease deadline while they are outstanding
-        # (design D4 of unify-terminal-admin-surface-guards).
+        # In-flight long-running commands (history download jobs) block the
+        # bridge main loop, which is expected behavior rather than terminal
+        # death — extend the lease deadline while they are outstanding.
         if heartbeat_stale and now < self._busy_until:
             return False
         return bool(heartbeat_stale)
@@ -519,7 +518,7 @@ class QmtCommandGateway:
     def extend_busy_until(self, seconds: float) -> float:
         """Extend the owner lease grace for a long-running in-flight command.
 
-        同步长命令（admin call_native / 历史下载）会阻塞桥主循环轮询，与
+        同步长命令（历史下载 job）会阻塞桥主循环轮询，与
         "终端死亡"在心跳上不可区分；在途窗口内 owner 新鲜度按 busy_until 放行。
         """
         deadline = self._clock() + _positive_finite("seconds", seconds)

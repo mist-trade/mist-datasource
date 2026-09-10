@@ -18,7 +18,7 @@ class QMTSettings(BaseSettings):
     # E: persistent TCP ingestion endpoint for bridge frames.
     realtime_tcp_host: str = "0.0.0.0"
     realtime_tcp_port: int = 9004
-    # Download job surface (/v1/raw/qmt/download). The job submits serial
+    # Download job surface (/v1/qmt/download). The job submits serial
     # download_history_data commands to the bridge; each command blocks the
     # bridge main loop, so the per-command budget is generous by design
     # (first-time/large-range downloads can be slow).

@@ -21,10 +21,10 @@
 - **下载与读取解耦（用户决策）**：`bars/query` 回归**纯读取**（30s 超时恢复够用）；
   下载是显式的独立阶段——采集流程改为"**统计缺失 → 提交下载 → 完成后获取**"。
 - **datasource 下载 job 端点**（QMT）：
-  - `POST /v1/raw/qmt/download`：提交 `{stock_list, base_periods(1m/5m/1d),
+  - `POST /v1/qmt/download`：提交 `{stock_list, base_periods(1m/5m/1d),
     start_time, end_time}` → in-memory job，经命令网关让桥**串行下载** → 立即返回
     `{job_id, tasks}`（不等待）；
-  - `GET /v1/raw/qmt/download/{job_id}`：逐任务状态 + 聚合；
+  - `GET /v1/qmt/download/{jobId}`：逐任务状态 + 聚合；
   - **盘中硬门禁**（ActivityWindow）内拒绝提交（counter `in_session`）。
 - **QMT 桥 v3.2**：新增 `introspect_methods`（只读方法面报告，ContextInfo attrs +
   script globals 双面）与 `download_history_data`（经 `globals()` 解析裸全局 API，

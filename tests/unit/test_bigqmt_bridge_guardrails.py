@@ -1,5 +1,4 @@
 import ast
-import re
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -385,20 +384,7 @@ def test_qmt_account_and_trading_methods_are_not_exposed_by_market_datasource() 
         PROJECT_ROOT / "src" / "adapter" / "qmt",
     ]
 
-    # The in-bridge trading hard-deny patterns (call_native guard, v3.1) quote
-    # the forbidden names in order to REJECT them — that is enforcement, not
-    # exposure. Strip the deny-pattern definition before scanning so the scan
-    # continues to detect actual call sites.
-    deny_block_re = re.compile(
-        r"TRADING_DENY_PATTERNS: Tuple\[str, \.\.\.\] = \([^)]*\)",
-        re.DOTALL,
-    )
-
     violations: list[str] = []
-    # Governance surfaces that quote forbidden names in order to REJECT them:
-    # - qmt/classification.py maps passorder → trading family (deny reason)
-    # - the bridge's TRADING_DENY_PATTERNS block strips them before execution
-    governance_exempt = {"src/datasource/qmt/classification.py"}
     for root in source_roots:
         if not root.exists():
             continue
@@ -406,12 +392,9 @@ def test_qmt_account_and_trading_methods_are_not_exposed_by_market_datasource() 
             if path.name == "mist_qmt_runtime_probe.py":
                 continue
             relative = path.relative_to(PROJECT_ROOT).as_posix()
-            if relative in governance_exempt:
-                continue
             text = path.read_text(encoding="utf-8")
-            scanned = deny_block_re.sub("TRADING_DENY_PATTERNS = ()", text)
             for method_name in forbidden_method_names:
-                if method_name in scanned:
+                if method_name in text:
                     violations.append(f"{relative} contains {method_name}")
 
     assert violations == []
