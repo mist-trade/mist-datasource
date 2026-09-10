@@ -30,7 +30,7 @@ class FakeTdxClient:
         return {"ErrorId": "0", "Msg": "refresh kline cache success."}
 
 
-def make_registry(client: FakeTdxClient, stale_after: float = 15.0):
+def make_registry(client: FakeTdxClient):
     clock = FakeClock()
     registry = TdxHistoryDownloadRegistry(client=client, clock=clock)
     return registry, clock

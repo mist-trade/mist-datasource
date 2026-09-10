@@ -3,12 +3,10 @@
 import asyncio
 
 import pytest
-from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 import tdx.main
 from src.datasource.tdx.history_download import TdxHistoryDownloadRegistry
-from src.datasource.tdx.http_client import TdxHttpClient
 
 
 class FakeTdxHttpClient:
