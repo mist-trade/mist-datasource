@@ -152,9 +152,136 @@ def test_builtin_bridge_exposes_read_only_runtime_introspection() -> None:
     )
 
     assert result["ok"] is True
-    assert result["result"]["bridgeBuildId"] == "mist-qmt-realtime-bridge-v3.1"
+    assert result["result"]["bridgeBuildId"] == "mist-qmt-realtime-bridge-v3.2"
     assert len(result["result"]["bridgeRuntimeFingerprint"]) == 64
     assert result["result"]["methods"]["subscribe_quote"]["available"] is True
+
+
+def test_introspect_methods_reports_both_injection_surfaces() -> None:
+    source = BRIDGE_SCRIPT.read_text(encoding="utf-8")
+    namespace = {"__name__": "mist_qmt_realtime_bridge_embedded"}
+    exec(compile(source, BRIDGE_SCRIPT.name, "exec"), namespace)
+
+    class EmbeddedContext:
+        def get_market_data_ex(self):
+            return None
+
+    # 框架注入面：模拟 QMT 运行时注入到脚本全局的 download_history_data。
+    def _fake_download(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    namespace["download_history_data"] = _fake_download
+
+    result = namespace["_execute_history_command"](
+        EmbeddedContext(),
+        {
+            "method": "introspect_methods",
+            "params": {
+                "candidates": ["download_history_data", "get_market_data_ex"]
+            },
+        },
+    )
+
+    assert result["ok"] is True
+    report = result["result"]
+    # download_history_data：globals 面可用，ContextInfo 面缺失（双面报告的价值）
+    assert report["download_history_data"]["globals"]["available"] is True
+    assert report["download_history_data"]["contextinfo"]["available"] is False
+    # get_market_data_ex：ContextInfo 面可用
+    assert report["get_market_data_ex"]["contextinfo"]["available"] is True
+
+
+def test_introspect_methods_never_executes_candidates_and_validates_names() -> None:
+    source = BRIDGE_SCRIPT.read_text(encoding="utf-8")
+    namespace = {"__name__": "mist_qmt_realtime_bridge_embedded"}
+    exec(compile(source, BRIDGE_SCRIPT.name, "exec"), namespace)
+
+    class EmbeddedContext:
+        def __init__(self) -> None:
+            self.executed: list[str] = []
+
+        def do_thing(self):
+            self.executed.append("do_thing")
+            return None
+
+    context = EmbeddedContext()
+    result = namespace["_execute_history_command"](
+        context,
+        {
+            "method": "introspect_methods",
+            "params": {"candidates": ["do_thing", "invalid-name", "x" * 100]},
+        },
+    )
+
+    assert result["ok"] is True
+    assert result["result"]["do_thing"]["contextinfo"]["available"] is True
+    assert result["result"]["invalid-name"]["valid"] is False
+    assert context.executed == []  # 绝不调用
+
+
+def test_download_history_data_resolves_globals_and_aggregates_periods() -> None:
+    source = BRIDGE_SCRIPT.read_text(encoding="utf-8")
+    namespace = {"__name__": "mist_qmt_realtime_bridge_embedded"}
+    exec(compile(source, BRIDGE_SCRIPT.name, "exec"), namespace)
+
+    class EmbeddedContext:
+        pass
+
+    downloads: list[tuple[str, str, str, str]] = []
+
+    def fake_download(stockcode, period, startTime, endTime):
+        downloads.append((stockcode, period, startTime, endTime))
+
+    namespace["download_history_data"] = fake_download
+
+    result = namespace["_execute_history_command"](
+        EmbeddedContext(),
+        {
+            "method": "download_history_data",
+            "params": {
+                "stockcode": "000688.SH",
+                "periods": ["1m", "5m", "1d"],
+                "startTime": "20260901",
+                "endTime": "20260908",
+            },
+        },
+    )
+
+    assert result["ok"] is True
+    per = result["result"]["perPeriod"]
+    assert per == {"1m": "ok", "5m": "ok", "1d": "ok"}
+    assert downloads == [
+        ("000688.SH", "1m", "20260901", "20260908"),
+        ("000688.SH", "5m", "20260901", "20260908"),
+        ("000688.SH", "1d", "20260901", "20260908"),
+    ]
+
+
+def test_download_history_data_reports_api_unavailable() -> None:
+    source = BRIDGE_SCRIPT.read_text(encoding="utf-8")
+    namespace = {"__name__": "mist_qmt_realtime_bridge_embedded"}
+    # 确保 globals 面与 ContextInfo 面都没有 download_history_data
+    namespace.pop("download_history_data", None)
+    exec(compile(source, BRIDGE_SCRIPT.name, "exec"), namespace)
+
+    class EmbeddedContext:
+        pass
+
+    result = namespace["_execute_history_command"](
+        EmbeddedContext(),
+        {
+            "method": "download_history_data",
+            "params": {
+                "stockcode": "000688.SH",
+                "periods": ["1m"],
+                "startTime": "20260901",
+                "endTime": "20260908",
+            },
+        },
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "QMT_DOWNLOAD_API_UNAVAILABLE"
 
 
 def test_qmt_builtin_scripts_default_to_qmt_service_bridge_port() -> None:
@@ -288,47 +415,6 @@ def test_qmt_account_and_trading_methods_are_not_exposed_by_market_datasource() 
                     violations.append(f"{relative} contains {method_name}")
 
     assert violations == []
-
-
-def test_call_native_hard_denies_trading_and_account_methods() -> None:
-    source = BRIDGE_SCRIPT.read_text(encoding="utf-8")
-    namespace = {"__name__": "mist_qmt_realtime_bridge_embedded"}
-    exec(compile(source, BRIDGE_SCRIPT.name, "exec"), namespace)
-
-    class EmbeddedContext:
-        def __init__(self) -> None:
-            self.executed: list[str] = []
-
-        def get_local_data(self):
-            self.executed.append("get_local_data")
-            return {"ok": True}
-
-        def passorder(self):
-            self.executed.append("passorder")
-            return {"placed": True}
-
-        def stock_account(self):
-            self.executed.append("stock_account")
-            return {"account": True}
-
-    for forbidden in ("passorder", "stock_account", "cancel_order_stock"):
-        result = namespace["_execute_history_command"](
-            EmbeddedContext(),
-            {"method": "call_native", "params": {"method": forbidden}},
-        )
-        assert result["ok"] is False
-        assert result["error"]["code"] == "QMT_ADMIN_METHOD_FORBIDDEN"
-
-    allowed_context = EmbeddedContext()
-    allowed = namespace["_execute_history_command"](
-        allowed_context,
-        {
-            "method": "call_native",
-            "params": {"method": "get_local_data", "kwargs": {}},
-        },
-    )
-    assert allowed["ok"] is True
-    assert allowed_context.executed == ["get_local_data"]
 
 
 def test_qmt_local_dat_binary_parsing_stays_out_of_qmt_v1_routes() -> None:

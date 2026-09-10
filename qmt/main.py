@@ -8,6 +8,7 @@ an operator explicitly selects ``off`` for rollback.
 import asyncio
 import contextlib
 import os
+import time
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -24,6 +25,7 @@ from src.core.config import settings
 from src.core.logging import get_logger, setup_logging
 from src.core.otel import force_flush, init_otel, instrument_app
 from src.datasource import metrics as ds_metrics
+from src.datasource.qmt.history_download import QmtHistoryDownloadRegistry
 from src.datasource.qmt.provider import QmtDatasourceProvider
 from src.datasource.qmt.realtime.gateway import QmtCommandGateway
 from src.datasource.qmt.realtime.runtime import QmtRealtimeCollector
@@ -180,6 +182,10 @@ def create_qmt_app(
     target.state.qmt_realtime_mode = mode
     target.state.qmt_command_gateway = app_gateway
     target.state.qmt_provider = app_provider
+    target.state.qmt_download_registry = QmtHistoryDownloadRegistry(
+        command_gateway=app_gateway,
+        clock=time.monotonic,
+    )
     if manager is not None and collector is not None:
         target.state.qmt_realtime_ws_manager = manager
         target.state.qmt_realtime_collector = collector

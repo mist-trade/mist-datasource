@@ -392,6 +392,24 @@ Generated from the `tdx` FastAPI app in `builtin` mode.
 - Parameters: -
 - Responses: 200: -; 422: HTTPValidationError
 
+## POST /v1/tdx/download
+
+- Operation ID: `submit_tdx_download_v1_tdx_download_post`
+- Tags: V1
+- Summary: Submit Tdx Download
+- Request Body: `TdxDownloadJobRequest`
+- Parameters: -
+- Responses: 200: -; 422: HTTPValidationError
+
+## GET /v1/tdx/download/{job_id}
+
+- Operation ID: `tdx_download_status_v1_tdx_download__job_id__get`
+- Tags: V1
+- Summary: Tdx Download Status
+- Request Body: `-`
+- Parameters: job_id (path, string, required=true)
+- Responses: 200: -; 422: HTTPValidationError
+
 ## Schemas
 
 - `FormulaCallRequest`
@@ -409,6 +427,7 @@ Generated from the `tdx` FastAPI app in `builtin` mode.
 - `TdxConvertibleBondInfoQueryRequest`
 - `TdxDatasourceHealth`
 - `TdxDividendFactorsQueryRequest`
+- `TdxDownloadJobRequest`
 - `TdxFinancialDataByDateQueryRequest`
 - `TdxFinancialDataQueryRequest`
 - `TdxFormulaBatchExecutionRequest`

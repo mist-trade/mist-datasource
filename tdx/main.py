@@ -7,6 +7,7 @@ operator explicitly selects ``off`` for rollback.
 
 import asyncio
 import contextlib
+import time
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from typing import Any, Literal, cast
@@ -18,6 +19,7 @@ from src.core.config import settings
 from src.core.logging import setup_logging
 from src.core.otel import init_otel, instrument_app
 from src.datasource import metrics as ds_metrics
+from src.datasource.tdx.history_download import TdxHistoryDownloadRegistry
 from src.datasource.tdx.provider import TdxDatasourceProvider
 from src.datasource.tdx.realtime.gateway import TdxRealtimeGateway
 from src.ws.health_contract import TdxDatasourceHealth
@@ -114,6 +116,9 @@ def create_tdx_app(
     )
     target.state.tdx_realtime_mode = mode
     target.state.tdx_provider = app_provider
+    target.state.tdx_download_registry = TdxHistoryDownloadRegistry(
+        client=getattr(app_provider, "client", None), clock=time.monotonic
+    )
     target.state.tdx_realtime_gateway = app_gateway
     target.state.tdx_realtime_ws_manager = app_manager
 

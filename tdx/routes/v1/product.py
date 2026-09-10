@@ -6,6 +6,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.datasource import metrics as ds_metrics
 from src.datasource.contracts import (
     BEIJING_TZ,
     DatasourceError,
@@ -13,6 +14,7 @@ from src.datasource.contracts import (
     ResponseMeta,
     serialize_response_data,
 )
+from src.datasource.tdx.history_download import TdxHistoryDownloadRegistry
 from src.datasource.tdx.http_client import TdxHttpError
 from src.datasource.tdx.models import (
     RawTdxCallRequest,
@@ -82,6 +84,11 @@ def _payload_alias(payload: BaseModel) -> dict[str, Any]:
 
 def _get_provider(request: Request) -> TdxDatasourceProvider | None:
     return get_tdx_provider(request)
+
+
+def _get_download_registry(request: Request) -> TdxHistoryDownloadRegistry | None:
+    registry = getattr(request.app.state, "tdx_download_registry", None)
+    return registry if isinstance(registry, TdxHistoryDownloadRegistry) else None
 
 
 def _request_id(request: Request) -> str:
@@ -297,6 +304,80 @@ async def raw_tdx_call(payload: RawTdxCallRequest, request: Request):
         capability_family="raw-diagnostics",
         operation_name="raw/tdx/call",
     )
+
+
+TDX_DOWNLOAD_BASE_PERIODS = ("1m", "5m", "1d")
+TDX_DOWNLOAD_SYMBOL_RE = __import__("re").compile(r"^\d{6}\.(SH|SZ|BJ)$")
+
+
+class TdxDownloadJobRequest(BaseModel):
+    stock_list: list[str] = Field(min_length=1, max_length=64)
+    base_periods: list[str] = Field(min_length=1, max_length=3)
+
+    def validation_error(self) -> str | None:
+        if any(
+            not TDX_DOWNLOAD_SYMBOL_RE.match(s.strip().upper())
+            for s in self.stock_list
+        ):
+            return "invalid_symbol_format"
+        if any(p not in TDX_DOWNLOAD_BASE_PERIODS for p in self.base_periods):
+            return "invalid_base_period"
+        return None
+
+
+@router.post("/v1/tdx/download")
+async def submit_tdx_download(payload: TdxDownloadJobRequest, request: Request):
+    registry = _get_download_registry(request)
+    if registry is None:
+        return ResponseEnvelope.failure(
+            request_id=_request_id(request),
+            provider="tdx",
+            error=DatasourceError(
+                code="TDX_DOWNLOAD_DISABLED",
+                message="TDX download job surface is not initialized",
+                retryable=True,
+                details={},
+            ),
+            meta=_meta(),
+        )
+    validation_error = payload.validation_error()
+    if validation_error is not None:
+        ds_metrics.record_admin_call("tdx", "refresh_kline", "invalid")
+        return ResponseEnvelope.failure(
+            request_id=_request_id(request),
+            provider="tdx",
+            error=DatasourceError(
+                code="TDX_DOWNLOAD_REQUEST_INVALID",
+                message=f"Download request rejected: {validation_error}",
+                retryable=True,
+                details={"reason": validation_error},
+            ),
+            meta=_meta(),
+        )
+    submission = registry.submit_download_job(
+        stock_list=[s.strip().upper() for s in payload.stock_list],
+        base_periods=payload.base_periods,
+    )
+    return _success(request, submission, provider="tdx")
+
+
+@router.get("/v1/tdx/download/{job_id}")
+async def tdx_download_status(job_id: str, request: Request):
+    registry = _get_download_registry(request)
+    status = registry.job_status(job_id) if registry else None
+    if status is None:
+        return ResponseEnvelope.failure(
+            request_id=_request_id(request),
+            provider="tdx",
+            error=DatasourceError(
+                code="TDX_DOWNLOAD_JOB_NOT_FOUND",
+                message=f"Download job {job_id} not found or expired",
+                retryable=False,
+                details={"jobId": job_id},
+            ),
+            meta=_meta(),
+        )
+    return _success(request, status, provider="tdx")
 
 
 @router.post("/v1/sectors/query")

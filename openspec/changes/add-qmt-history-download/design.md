@@ -4,164 +4,125 @@
 
 ```
 backend CollectorService.collectK / PostCloseSync
-  → POST qmt-datasource /v1/...
-→ QmtMarketOperations.get_bars (src/datasource/qmt/operations/market.py)
-  → 桥命令 {method:"get_market_data_ex", params:{stock_list, period, start_time, end_time, ...}}
-→ [终端内] mist_qmt_realtime_bridge._execute_history_command
+  → POST qmt-datasource /v1/bars/query
+→ QmtMarketOperations.get_bars
+  → 桥命令 {method:"get_market_data_ex", ...}
+→ [终端内] _execute_history_command
   → ContextInfo.get_market_data_ex(...)   ← 只读终端本地缓存
-→ 结果经命令网关返回，datasource 归一化后落库
 ```
 
-问题：QMT 终端本地缓存的历史需要**显式下载**（`download_history_data`），实时订阅
-推送不回填历史缓存。9/1 起缓存断供，`get_market_data_ex` 返回空 → 收盘同步 notReady
-→ k 表缺口 + 巡检天天红。TDX 同理：历史就绪依赖操作员每晚手动盘后下载（2026-09-09
-用户证实），手动未跑/晚于 22:30 的夜晚同步即空。
+问题：QMT 终端本地缓存的历史需要**显式下载**，实时订阅推送不回填历史缓存。
+9/1 起缓存断供，`get_market_data_ex` 返回空 → 收盘同步 notReady → k 表缺口 +
+巡检天天红。TDX 同理：历史就绪依赖操作员每晚手动盘后下载（2026-09-09 用户证实）。
+
+**API 形态实证（2026-09-09 晚 probe，evidence/2026-09-09-qmt-download-api-probe.md）**：
+终端 `ContextInfo` 上没有 `download_history_data`（getattr 三周期一致失败）——
+官方文档示例本身是裸函数调用（框架注入到策略脚本全局命名空间）。早期 call_native
+通用执行方案据此废弃（不可达 + 开洞）。
 
 ## 2. 关键决策
 
-### D1 同步下载定案（用户决策 2026-09-09）+ 盘中硬门禁 + owner 租约按在途放行
+### D1 下载与读取解耦：统计缺失 → 下载 → 完成后获取（用户决策）
 
-**两源均按同步下载设计，异步视为不可用**（QMT 官方文档只记载同步版
-`download_history_data`；`download_history_data2` 未见于 ContextInfo 文档，不作为
-依赖）。同步下载会阻塞执行线程——接受此代价，边界与后果显式化：
+bars/query 回归**纯读取**（30s 超时恢复够用；D9 旧"backend 超时对齐"作废）。
+下载是采集流程的**显式阶段**，由 backend collector 编排：
 
-- **阻塞范围**：QMT 桥主循环在下载期间停摆（心跳/命令轮询暂停）；TDX 侧终端 HTTP
-  调用阻塞直至刷新完成（终端弹加载界面）。
-- **恢复路径**（QMT）：阻塞结束 → 桥恢复轮询 → owner 重注册（generation++）→
-  journal 对账。该链路与终端重启同构，生产已验证（9/1、9/8 重启自动恢复）。
-- **盘中硬门禁（用户决策 2026-09-09）**：A 股活动时段内（复用既有
-  `ActivityWindow`，默认 `09:15-11:30,13:00-15:00` UTC+8，env
-  `MIST_ACTIVITY_WINDOWS` 同源）**禁止触发下载/刷新**——QMT 与 TDX 一律跳过，
-  counter `result=in_session`，照常执行读取。盘中手动 collect 因此天然安全
-  （不 stall 实时），代价是盘中采集拿不到历史（等同现状 notReady）。
-- **owner 租约：按在途下载命令放行，不做全局阈值调整（用户决策 2026-09-09）**：
-  死亡探测的本质 = 桥轮询（心跳）停摆 15s（`owner_stale_after_seconds`，
-  `gateway.py:124`）即判 stale——但采集命令在途时的停摆是预期行为而非死亡，
-  二者在心跳上不可区分。datasource 维护 per-source 的 `busy_until` 状态：
-  发出 download 命令时 `busy_until = max(busy_until, now + 该命令超时 + 60s)`；
-  owner 新鲜度评估改为 `stale if now > max(last_poll + 15s, busy_until)`。
-  在途窗口内死亡探测自动放宽（仍有界）；**无下载在途时 15s 原判不变，真实死亡
-  检测零损失**；`owner_stale_after_seconds` 本身不动。
+```
+① 统计缺失：查 k 表，枚举 (标的 × 基础周期 1m/5m/1d × 日期窗) 缺口
+② 提交下载：POST /v1/raw/qmt/download → job（桥串行执行）→ 立即返回
+③ 轮询完成：GET /v1/raw/qmt/download/{job} 直至全部完成（有界退避）
+④ 获取K线：既有 bars/query 逐任务采集（缓存命中，快）→ upsert
+```
 
-### D2 编排放 datasource 侧，读 K 前限时等待（同步命令，无需迟到结果机制）
+### D2 异步 job 端点（不等待、不挂请求，用户决策）
 
-`get_bars` 流程变为：
-1. 若 `*_HISTORY_*_ENABLED=on` 且不在盘中门禁窗口：发下载/刷新命令（**一次覆盖
-   该标的全部基础周期**，见 D2a）；
-2. 同步等待命令结果（datasource→桥/终端 HTTP 的读超时按下载预算放宽，
-   `QMT_HISTORY_DOWNLOAD_TIMEOUT_MS` / `TDX_HISTORY_REFRESH_TIMEOUT_MS`，
-   默认 600000，上限 1800000）；
-3. 无论下载成败，**照常发读取命令**（降级 = 现状行为，只读本地缓存）。
-   注：即使 datasource 超时放弃等待，桥/终端侧下载已完成、本地缓存已落，
-   降级读取仍受益。
+- `POST /v1/raw/qmt/download`：校验（stock_list 格式、base_periods ⊆ {1m,5m,1d}、
+  数量 ≤ 64、日期窗合法）→ 创建 in-memory job（任务 = (symbol × base period) 组合，
+  经命令网关让桥**串行**执行原生 `download_history_data`）→ 立即返回
+  `{job_id, tasks}`；
+- `GET /v1/raw/qmt/download/{job_id}`：逐任务状态（pending/running/done/failed）+
+  聚合（all_done / any_failed）；
+- job 完成（全部任务终态）后保留结果供查询（TTL，如 1h）；
+- **盘中硬门禁**（ActivityWindow）内拒绝提交（counter `in_session`）。
 
-**简化**：命令结果与命令同轮返回（桥在轮询周期内同步执行），**不需要**迟到结果、
-retained-result 关联、命令网关扩展——`download` 命令只是"耗时较长"的普通命令。
+### D3 QMT 桥 v3.2：introspect + download 双命令，call_native 移除
 
-### D2a 下载粒度：每次触发下载全部基础周期（用户决策 2026-09-09）
+- `introspect_methods {candidates}`：getattr(ContextInfo) 报告 + **script globals
+  报告**（双注入面，对应 API 形态实证）——只读、绝不调用；
+- `download_history_data {stockcode, periods, startTime, endTime}`：解析顺序
+  **`globals().get("download_history_data")`（框架注入面）→
+  `getattr(ContextInfo, ...)`（fallback）**，按 periods 顺序逐周期同步下载、
+  逐周期状态汇总返回；
+- **移除** `call_native` handler 与 `TRADING_DENY_PATTERNS`/
+  `_NATIVE_METHOD_NAME_RE`（通用执行洞退役；v3.1 部署版含它，v3.2 覆盖时清掉）；
+- `bridgeBuildId` → `mist-qmt-realtime-bridge-v3.2`；
+- 护栏不变：Python 3.6 + GBK + 无 threading + guardrail 测试。
 
-下载触发时**一次下载该标的的全部基础周期 1m / 5m / 1d**（QMT 三次调用、TDX 三次
-`refresh_kline`），而非按读取请求的周期映射：
+### D4 busy_until（下载在途放行，机制沿用）
 
-- 30m 由 5m 合成、日线由 1d 存储（官方文档两源一致），全基础周期下载后任意周期
-  读取都被覆盖，且后续任务命中缓存即快速返回；
-- 去重：datasource 进程内 memo（symbol+basePeriod+range，TTL 约 10 分钟），
-  同一同步轮内同标的的后续任务（4 任务/标的/夜）跳过重复下载
-  （16 任务/夜 → 最多 12 次下载而非 48 次）；
-- 下载范围 = 读取请求的 start/end（不额外外扩）。
+下载命令串行执行会阻塞桥主循环（心跳停摆）。datasource 在**发出每条 download
+命令**时 `extend_busy_until(该命令超时 + 60s)`；owner 新鲜度评估
+`stale if now > max(last_poll + 15s, busy_until)`；无在途时 15s 原判不变。
+（`add-qmt-history-download` 前置 change `unify-terminal-admin-surface-guards`
+的 call_native 亦复用；该 change 落地后其 call_native 随 REMOVED delta 退役，
+busy_until 机制由本 change 的 download job 使用。）
 
-### D3 降级矩阵（部署顺序无关化）
+### D5 降级与可观测
 
-| 情形 | 行为 | 观测 |
-|------|------|------|
-| 下载完成 ok | 正常读取 | counter `result=ok` |
-| 下载超时（datasource 放弃等待，终端侧可能已完成） | 照常读取 | counter `result=timeout` + warn（reason=download_timeout） |
-| 下载命令失败 | 照常读取 | counter `result=failed` + warn（原生错误进 error 字段） |
-| 旧桥不支持（QMT_COMMAND_UNSUPPORTED） | 照常读取 | counter `result=unsupported` + 启动后首次 warn |
-| **盘中（ActivityWindow 内）** | **跳过下载/刷新，照常读取** | counter `result=in_session` |
-| 开关 off | 不发下载命令 | counter `result=disabled` |
+- job 计数器：`mist_datasource_qmt_history_download_total{result=ok|failed|
+  in_session|disabled|unsupported}`（unsupported = 旧桥无 download 命令）；
+- 提交被拒（盘中/非法参数）→ 有界 reason warn；桥执行失败 → 逐任务 failed 上报；
+- job 全部完成后（聚合 all_done）**由 backend 轮询发现**并继续采集——datasource
+  不反向回调 backend（少一个端点、更稳；轮询退避由 backend 控制）。
 
-因此 **datasource 先部署、桥后更新，任何顺序都不破坏现状**。
+### D6 backend collector 三段编排（mist 仓）
 
-### D4 配置
+- PostCloseSync / 手动 collect 流程前置：
+  1. 统计缺失：按 (QMT 源标的 × 基础周期 × 目标窗) 查 k 表行数，枚举缺口；
+  2. 有缺口 → 提交下载 job → 轮询（间隔 5–10s，预算 ≤ 下载超时）→ 完成/超时；
+  3. 超时 → 既有 notReady/重试路径（数据可能已部分就位，下次轮询自愈）；
+- 预算超时后仍提交下一轮晨间兜底（06:30）——既有重试结构复用；
+- `DATASOURCE_HTTP_TIMEOUT_MS` 保持 30s 不动（bars/query 纯读；submit/poll
+  轻调用另有短超时）。
 
-- `QMT_HISTORY_DOWNLOAD_ENABLED` / `TDX_HISTORY_REFRESH_ENABLED`：`on`/`off`，
-  默认 `on`（独立 kill-switch，免重启回滚）。
-- `QMT_HISTORY_DOWNLOAD_TIMEOUT_MS` / `TDX_HISTORY_REFRESH_TIMEOUT_MS`：
-  默认 `600000`（10 分钟，覆盖首装大范围下载），上限 `1800000`；
-  TDX 预算覆盖至多三次顺序刷新（单次超时即短路跳过余下）。
-- `owner_stale_after_seconds` 保持 15s 不动（在途下载由 `busy_until` 放行，
-  见 D1）。
-- 不设 shadow 模式（确定性逻辑变更，降级路径即天然回退）。
+### D7 TDX：下载端点（refresh_kline 定向下载）+ 纯读取（双源对称，用户决策）
 
-### D5 范围
+- **TDX 下载端点**：`POST /v1/tdx/download`（`{stock_list, base_periods ⊆ {1m,5m,1d}}`）
+  → 逐周期 `refresh_kline` → 逐周期状态返回；同步限时（实测 ~100ms，预算 600s）；
+  symbol/period 校验前置；`raise_for_native_error` 适配 `ErrorId==0` 成功形状
+  （实测 `Msg` 字段，文档样例为 `Error`——不依赖消息字段名）。
+- **get_bars 保持纯读**（用户决策：双源对称，读取路径零下载副作用）——采集流程
+  统一三段：统计缺失 → 下载（QMT job / TDX 端点）→ 读取。
+- TDX refresh 无日期范围参数（终端托管下载范围）——已知限制，文档记录；对
+  "补昨日/历史缺口"用途已实测够用（probe 闭环）。
+- 无 TDX 桥改动：refresh_kline 走终端 HTTP（TdxHttpClient.call），TDX 桥
+  （tqcenter 实时订阅）不参与。
 
-- QMT 与 TDX **都在范围内**；只挂各自 `get_bars`（采集路径）；实时 WS/订阅链路
-  不经过它，零影响。
-- 手动 `/v1/collector/collect` 与夜间/晨间同步同走此路径，自动受益。
-- TDX 无桥脚本改动（refresh_kline 走终端 HTTP 通道，见 D8）。
+### D8 范围与不变量
 
-### D6 QMT 桥护栏（guardrails 全部继续适用）
-
-- Python 3.6 + `# coding:gbk`（`| None` / f-string=`/ dataclass 等新语法禁用）；
-- 禁 `threading` import；
-- `bridgeBuildId` → `mist-qmt-realtime-bridge-v3.1`（health 可见，部署验证依据）；
-- 新增 handler 纳入既有 `test_bigqmt_bridge_guardrails.py` 约束；
-- `_compute_runtime_fingerprint` 的函数名清单不改：`_execute_history_command`
-  字节码变化自然驱动 fingerprint 更新。
-
-### D7 可观测性
-
-- 计数器（按源独立，result 六态）：
-  - `mist_datasource_qmt_history_download_total{result=ok|timeout|failed|unsupported|in_session|disabled}`
-  - `mist_datasource_tdx_history_refresh_total{result=ok|timeout|failed|unsupported|in_session|disabled}`
-- warn 日志：判断点（timeout/failed/unsupported）各一条，reason 用有界枚举，
-  原生错误只进 `error=` 字段；info 生命周期日志（下载/刷新开始/完成耗时）。
-
-### D8 TDX：refresh_kline 前置（admin 设计补全，官方文档已核实 + 生产实测）
-
-**官方语义**（help.tdx.com.cn ctx.stock.md，2026-09-09 核对）：
-
-> "根据股票和周期刷新历史K线缓存，**如果本地没有下载完整的日线等数据，则可以调用
-> 这个函数定向下载**某些品种某些周期的历史K线数据"
-
-- 签名：`refresh_kline(stock_list: List[str], period: str)`；period **只支持
-  `1d`/`1m`/`5m`**，其它周期由这三种生成 → 按用户决策每次触发顺序调三次
-  （1m → 5m → 1d）。
-- **阻塞式**（原文）："使用后会在客户端弹出刷新数据的加载界面，**加载完成后才会有
-  返回**" → datasource 限时等待；TDX 采集管线内**顺序执行、不并发轰终端**。
-- **盘中限制**（原文）："如果在盘中交易时间段下载 1m 和 5m 分钟线，只能下载到截止
-  上个交易日的数据"——与用途匹配（历史采集针对既往交易日）。
-- **响应形状**：成功返回 `{"ErrorId": "0", "Msg": "refresh kline cache success.",
-  "run_id": "-99"}` —— **成功以 `ErrorId==0` 判定**；消息字段实测为 `Msg`
-  （官方文档样例写的是 `Error`，以实测为准，归一化不依赖消息字段名），
-  否则会把成功误判为失败（`raise_for_native_error` 需适配此形状）。
-- **生产实测证据（2026-09-09 01:34，`/v1/raw/tdx/call`）**：
-  `refresh_kline({stock_list:["000688.SH"], period:"1m"})` → 92ms、ErrorId=0；
-  随后 raw `get_market_data`（1m，20260908 当日）返回 **240 根完整日线内分钟条**
-  （09:31:00–15:00:00）——该数据此前在 QMT/TDX 采集侧均为空，**"刷新→缓存填充→
-  可读"链路实证闭环**；5m 同样验证（121ms + 缓存可读，KlineTotal 8113）。
-- **无桥脚本改动**：TDX 历史走终端 HTTP（`TdxHttpClient.call`），`refresh_kline` 是
-  同通道的另一个 method call；TDX 桥（tqcenter 实时订阅）不参与，部署仅 datasource
-  容器。
+- bars/query **纯读取**（显式要求，双源对称：QMT 与 TDX 读取路径均零下载副作用）；
+  夜间/晨间/手动 collect 同走三段流程；
+- TDX 桥、实时链路、k 表数据：不动；
+- `unify-terminal-admin-surface-guards` 已落地的 datasource-admin-surface
+  （分类守卫 + busy_until + TDX raw）保留；本 change 携带其 QMT call_native
+  的 REMOVED delta。
 
 ## 3. 风险与对策
 
 | 风险 | 对策 |
 |------|------|
-| 同步下载阻塞 QMT 桥主循环（用户知情接受） | 仅采集管线触发；定时任务在盘外；**盘中硬门禁直接禁止**；超时上限 1800s；owner stale→重注册→journal 对账为已验证恢复路径 |
-| 下载在途期 owner 心跳停摆被误判死亡 | `busy_until` 按在途命令放行（D1），`owner_stale_after_seconds` 15s 不动；OO 告警规则复核兜底 |
-| 盘中手动 collect | **硬门禁**：跳过下载/刷新（counter `in_session`），读取照常，无 stall |
-| 下载拖长收盘同步（16 任务 × 3 周期） | 进程内 memo 去重（D2a）；单命令限时；超时降级读取 |
-| 桥脚本 GBK 复制损坏 | 部署手册沿用既有约定：用户手动 copy + 重启终端，禁 scp |
-| QMT 下载失败无显式错误（原生返回 none） | 下载为 best-effort；有效性由后续读取行数验证（失败即 notReady 既有路径） |
-| TDX `refresh_kline` 实测与文档不符 | 已生产实测吻合（D8 证据）；若后续版本行为漂移，回退 `refresh_cache` 或仅降级读取，delta 随结论微调 |
+| 桥内 `globals()` 无 download_history_data（版本差异） | introspect 双面探测先行；缺失 → job 失败 + 明确错误码（`QMT_DOWNLOAD_API_UNAVAILABLE`），不阻塞读取 |
+| 下载阻塞桥主循环（串行、时长不可控） | 盘外执行（盘中提交被门禁拒）；busy_until 放行租约；job 串行限速 |
+| backend 轮询风暴 | 轮询间隔 5–10s + 预算上限；超时走既有 notReady 重试路径 |
+| 桥脚本 GBK 复制损坏 | 既有约定：手动 copy + 重启终端，禁 scp |
+| QMT 下载无显式失败信号（原生返回 none） | 下载 best-effort；有效性由后续读取行数验证（失败即 notReady 既有路径） |
+| TDX refresh_kline 首装大范围变慢 | 当前实测 ~100ms；若实测漂移 → 镜像 job 模型（本 change 不做） |
 
 ## 4. 部署序列（概要，细则见 tasks）
 
-1. datasource 容器部署（QMT/TDX 下载前置 + 降级路径 + busy_until 放行；旧 QMT 桥下
-   自动 unsupported 降级，TDX 直接生效）；
-2. 用户手动 copy 新 QMT 桥脚本进终端 + 重启终端（避开交易时段）；TDX 无桥改动；
-3. 验证：health `bridgeBuildId=v3.1`、两侧计数器 ok、实跑 QMT/TDX 各一次历史采集、
-   复核夜间告警（无 stale 假告警）；
-4. 补录 000688 的 14 条缺口；次晨巡检卡核对转绿。
+1. datasource 容器部署（download job 端点 + 桥 v3.2 + call_native 移除）；
+2. backend 容器部署（collector 三段编排）；
+3. 用户手动 copy 新 QMT 桥 v3.2 + 重启终端（避开交易时段）；TDX 无桥改动；
+4. 验证：`bridgeBuildId=v3.2`、download job 实跑（000688 缺口补录）、
+   bars/query 纯读确认、introspect 双面报告；
+5. 次晨巡检卡核对：000688 转绿、整体 PASSED。

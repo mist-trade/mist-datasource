@@ -1,78 +1,66 @@
 # Tasks: add-qmt-history-download
 
-## 1. datasource 侧：QMT 下载编排与降级
+## 1. datasource 侧：download job 端点 + call_native 退役
 
-- [ ] 1.1 `[mist-datasource]` `QmtMarketOperations.get_bars` 前置编排：发同步下载命令
-  （一次覆盖 1m/5m/1d，范围取自请求），限时等待结果，随后照常读取；
-  读 `QMT_HISTORY_DOWNLOAD_ENABLED` / `QMT_HISTORY_DOWNLOAD_TIMEOUT_MS`。
-- [ ] 1.2 `[mist-datasource]` 进程内 memo 去重（symbol+basePeriod+range，TTL ≈10min），
-  同一采集轮内同标的后续任务跳过重复下载。
-- [ ] 1.3 `[mist-datasource]` 降级矩阵落地（ok/timeout/failed/unsupported/in_session/
-  disabled），计数器 `mist_datasource_qmt_history_download_total{result}` + 有界
-  reason warn（unsupported 仅首次告警）；datasource→桥命令读超时对 download 命令按
-  下载预算放宽。
-- [ ] 1.4 `[mist-datasource]` **盘中硬门禁**：复用 `ActivityWindow`
-  （`09:15-11:30,13:00-15:00` UTC+8，env `MIST_ACTIVITY_WINDOWS` 同源），窗口内跳过
-  下载（counter `in_session`）、读取照常——盘中手动 collect 天然安全。
-- [ ] 1.5 `[mist-datasource]` **owner 租约按在途下载放行**：机制由前置 change
-  `unify-terminal-admin-surface-guards`（task 1.3）落地（per-source `busy_until`、
-  `stale if now > max(last_poll+15s, busy_until)`、`owner_stale_after_seconds`
-  保持 15s）；本任务仅**验收**：下载命令在途期间不误判死亡、超时后恢复正常判定。
-- [ ] 1.6 `[mist-datasource tests]` 单测：下载 ok/超时/失败/旧桥 unsupported/盘中
-  in_session/开关 off 六条路径 + memo 去重行为 + **busy_until 放行与到期判死**；
-  降级后读取行为与现状逐字段一致；超时后仍受益于终端侧已落缓存。
+- [ ] 1.1 `[mist-datasource]` 新增 job 注册表/编排模块
+  `src/datasource/qmt/history_download.py`：in-memory job（任务 =
+  symbol × base period，经命令网关串行 enqueue 原生
+  `download_history_data`）、逐任务状态、聚合、TTL 清理。
+- [ ] 1.2 `[mist-datasource]` 路由：`POST /v1/raw/qmt/download`（校验：
+  symbol 格式、base_periods ⊆ {1m,5m,1d}、≤64 标的、日期合法；ActivityWindow
+  门禁 → `in_session`）+ `GET /v1/raw/qmt/download/{job_id}`（逐任务+聚合）。
+- [ ] 1.3 `[mist-datasource]` **call_native 面退役**：删
+  `/v1/raw/qmt/call` 路由、`QmtAdminCallRequest`、`_admin_result_from_error`、
+  `provider.admin_call_native`、`src/datasource/qmt/classification.py`；
+  busy_until 机制保留（download 命令在途放行）。
+- [ ] 1.4 `[mist-datasource]` 可观测性：job 计数器
+  `mist_datasource_qmt_history_download_total{result}` + 提交/拒绝/逐任务
+  warn（reason 有界）。
+- [ ] 1.5 `[mist-datasource]` 配置：`QMT_DOWNLOAD_JOB_ENABLED`（datasource，
+  默认 on）；`QMT_ADMIN_CALL_TIMEOUT_MS` 配置随 call_native 退役删除
+  （mist-deploy 同步）。
 
-## 2. 桥侧：introspect_methods + download_history_data（v3.2 一次发版）
+## 2. QMT 桥 v3.2：introspect + download 双命令
 
-- [ ] 2.1 `[mist-datasource]` 桥新增两个命令 handler：
-  - `introspect_methods`：candidates 校验（≤32、标识符正则）、
-    `getattr(ContextInfo, name, None)` 只读报告（available/type/doc 有界）、
-    **绝不调用**（服务本 change task 2.4 的可用性探测）；
-  - `download_history_data`：参数校验（stockcode/periods/start_time/end_time），
-    顺序调用原生 `download_history_data` 三次（1m/5m/1d，显式起止时间），
-    汇总每周期完成状态返回；
-  `bridgeBuildId` → `mist-qmt-realtime-bridge-v3.2`
-  （v3.1 = 前置 change `unify-terminal-admin-surface-guards` 的 call_native）。
-- [ ] 2.2 `[mist-datasource tests]` guardrail：两个新 handler 通过
-  `test_bigqmt_bridge_guardrails.py`（Python 3.6 语法、GBK、无 threading）。
-- [ ] 2.3 `[mist-datasource tests]` 集成：命令结果同轮返回（无迟到结果机制）；
-  download/introspect 执行期间桥主循环阻塞、完成后恢复轮询的行为建模。
-- [ ] 2.4 `[hil]` QMT 可用性探测：经 v3.2 桥 `introspect_methods` 实测
-  `download_history_data` 在终端 `ContextInfo` 的存在性与签名（记录证据）；
-  若终端无此方法 → 按 design D1 决策门回本 change 讨论，不擅自接受主循环阻塞。
+- [ ] 2.1 `[mist-datasource]` 桥新增 `introspect_methods`：candidates 校验
+  （≤32、标识符正则）、**双面只读报告**（ContextInfo attrs + script globals，
+  available/type/doc 有界）、绝不调用。
+- [ ] 2.2 `[mist-datasource]` 桥新增 `download_history_data`：解析顺序
+  `globals().get` → `getattr(ContextInfo, ...)` fallback；按 periods 顺序
+  逐周期同步下载、逐周期状态汇总；`bridgeBuildId` →
+  `mist-qmt-realtime-bridge-v3.2`。
+- [ ] 2.3 `[mist-datasource]` 桥移除 `call_native` handler、
+  `TRADING_DENY_PATTERNS`、`_NATIVE_METHOD_NAME_RE`、`import re`（如无他用）。
+- [ ] 2.4 `[mist-datasource tests]` guardrail：双新 handler 过
+  `test_bigqmt_bridge_guardrails.py`（3.6/GBK/无 threading）+ call_native
+  移除断言（源码不再包含）。
 
-## 3. TDX 侧：refresh_kline 前置
+## 3. backend collector 三段编排（mist 仓）
 
-- [ ] 3.1 `[mist-datasource]` 生产 probe（`/v1/raw/tdx/call`，文档已定型语义，probe
-  只实测）：单标的单周期延迟（定 timeout 默认值）、盘中行为抽查、`ErrorId` 形状
-  确认；异常则按 D8 回退（`refresh_cache` 或仅降级读取）并修订 tdx delta。
-- [ ] 3.2 `[mist-datasource]` `TdxMarketOperations.get_bars` 前置编排：顺序三次
-  `client.call("refresh_kline", ...)`（1m/5m/1d，各自限时）→ 照常 `get_market_data`；
-  读 `TDX_HISTORY_REFRESH_ENABLED` / `TDX_HISTORY_REFRESH_TIMEOUT_MS`；
-  memo 去重与 QMT 同构。
-- [ ] 3.3 `[mist-datasource]` 降级矩阵落地（ok/timeout/failed/unsupported/in_session/
-  disabled），计数器 `mist_datasource_tdx_history_refresh_total{result}` + 有界
-  reason warn（unsupported 仅首次告警）；**`raise_for_native_error` 适配
-  `ErrorId==0` 成功形状**（官方响应把成功信息放在 `Error` 字段）；不新增公共端点；
-  盘中硬门禁与 QMT 同构（复用 `ActivityWindow`）。
-- [ ] 3.4 `[mist-datasource tests]` 单测：六条降级路径（含 in_session）+ 端点面不变
-  （OpenAPI snapshot 无新公共路由）+ 三周期顺序执行与超时短路。
+- [ ] 3.1 `[mist]` 统计缺失：QMT 源标的 × 基础周期(1m/5m/1d) × 目标窗查 k 表，
+  枚举缺口（跳过已完整窗口）。
+- [ ] 3.2 `[mist]` 下载提交与轮询：缺口 → `POST /v1/raw/qmt/download` 提交 job
+  → 轮询 status（5–10s 间隔，预算 ≤ 600s，超时走既有 notReady 路径）。
+- [ ] 3.3 `[mist]` 编排挂接：夜间/晨间同步与手动 collect 前置该三段（TDX 源
+  标的不提交——refresh 由 datasource get_bars 内置）。
+- [ ] 3.4 `[mist tests]` 单测：缺口枚举、提交/轮询（完成/超时/拒绝）、TDX 跳过。
 
 ## 4. 部署与验证
 
-- [ ] 4.1 `[mist-datasource]` CI 全绿（pyright/pylint 全仓 + 单测 + 集成）；
-  compose/env 增加 `QMT_HISTORY_DOWNLOAD_ENABLED`/`QMT_HISTORY_DOWNLOAD_TIMEOUT_MS`/
-  `TDX_HISTORY_REFRESH_ENABLED`/`TDX_HISTORY_REFRESH_TIMEOUT_MS`
-  （mist-deploy defaults + test 断言，参照 NOTIFICATION_CHANNELS 模式）。
-- [ ] 4.2 `[deploy]` 部署 datasource 容器（旧 QMT 桥下验证 unsupported 降级 + 计数器；
-  TDX refresh 直接生效验证）。
-- [ ] 4.3 `[deploy]` 复核 busy_until 放行与 OO 告警规则：采集夜下载在途期间不得产生
-  owner-stale/ws-disconnect 假告警；无下载在途时 15s 死亡检测不变；盘中实时监测
-  仍由快照 `StallDetector` 覆盖。
-- [ ] 4.4 `[hil]` 用户手动 copy 新 QMT 桥脚本（GBK，禁 scp）+ 重启 QMT 终端（避开交易
-  时段）；验证 health `bridgeBuildId=v3.1`、实时流无中断。
-- [ ] 4.5 `[hil]` 实跑验证：QMT 000688 历史采集 count>0（counter ok）；TDX 任一标的
-  历史采集 counter ok；夜间采集后复核无假告警；盘中手动 collect 验证 in_session 门禁。
-- [ ] 4.6 `[ops]` 补录 000688 的 14 条缺口（5m/30m × 9/1–9/8、日线 × 9/4–9/8、
-  1m × 9/8，逐日逐周期 collect）；k 表矩阵核对。
-- [ ] 4.7 `[ops]` 次晨 09:05 巡检卡核对：000688 转绿、整体 PASSED（或仅剩真实异常）。
+- [ ] 4.1 `[mist-datasource]` CI 全绿（pytest 全仓 + pyright）+ compose/env
+  增加 `QMT_DOWNLOAD_JOB_ENABLED`（mist-deploy defaults + 断言）+ 移除
+  `QMT_ADMIN_CALL_TIMEOUT_MS`（随 call_native 退役）。
+- [ ] 4.2 `[deploy]` 部署 datasource 容器 + backend 容器（编排上线）。
+- [ ] 4.3 `[hil]` 用户手动 copy QMT 桥 v3.2 + 重启终端（避开交易时段）；
+  验证 `bridgeBuildId=v3.2`、实时流无中断、call_native 已从桥面消失。
+- [ ] 4.4 `[hil]` 验证矩阵：download job 实跑（000688 缺口补录）→ 逐任务
+  状态 → k 表核对；introspect 双面报告实跑（`download_history_data`
+  可用性终证）；bars/query 无下载副作用确认。
+- [ ] 4.5 `[ops]` 次晨 09:05 巡检卡核对：000688 转绿、整体 PASSED。
+
+## 5. TDX 侧：下载端点（无读取内前置——纯读取对称）
+
+- [x] 5.1 `[mist-datasource]` 生产 probe（完成，证据 evidence/2026-09-09-tdx-refresh-kline-probe.md：12 次 refresh 全 ErrorId=0、延迟 16-114ms、9/8 读回 240/48/1 全对；**盘中行为抽查待盘中补测**）。
+- [ ] 5.2 `[mist-datasource]` **TDX 下载端点**：`POST /v1/tdx/download`（`{stock_list, base_periods ⊆ {1m,5m,1d}}`）→ 逐周期 `refresh_kline` → 逐周期状态返回；symbol/period 校验前置；同步限时（实测 ~100ms，预算 600s）；`raise_for_native_error` 适配 `ErrorId==0` 成功形状（实测 `Msg` 字段）。
+- [ ] 5.3 `[mist-datasource tests]` 单测：端点逐周期调用/非法周期拒绝/`ErrorId` 归一化；盘中抽查留 HIL（5.1 尾巴）。
+- [ ] 5.4 `[mist-datasource]` **get_bars 保持纯读**：确认读取路径无 refresh 前置（delta 已按纯读取修订）。

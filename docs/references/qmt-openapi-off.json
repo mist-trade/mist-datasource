@@ -53,7 +53,7 @@
       },
       "ObservabilityRequest": {
         "additionalProperties": false,
-        "description": "Bridge-side counters for E-0 throughput observation (no OTel in terminal).",
+        "description": "Bridge-side counters for E-0 throughput observation (no OTel in terminal).\n\nBridge sends ownerId/leaseToken/generation alongside intervalSeconds;\nmodel accepts them as optional aliases to avoid 422 when extra=forbid.\nNo loopback ownership check is done here (same as before).",
         "properties": {
           "counters": {
             "additionalProperties": {
@@ -62,10 +62,43 @@
             "title": "Counters",
             "type": "object"
           },
+          "generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation"
+          },
           "intervalSeconds": {
             "default": 30.0,
             "title": "Intervalseconds",
             "type": "number"
+          },
+          "leaseToken": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leasetoken"
+          },
+          "ownerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ownerid"
           },
           "sender": {
             "anyOf": [
@@ -194,7 +227,7 @@
             "type": "array"
           },
           "fill_data": {
-            "default": true,
+            "default": false,
             "title": "Fill Data",
             "type": "boolean"
           },
@@ -396,6 +429,17 @@
             "minimum": 0.0,
             "title": "Retainedresultbytes",
             "type": "integer"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startedat"
           }
         },
         "required": [
@@ -408,6 +452,7 @@
           "ownerStale",
           "bridgeArtifactSha256",
           "bridgeRuntimeFingerprint",
+          "startedAt",
           "pendingCount",
           "inFlightCount",
           "resultCount",
@@ -500,6 +545,48 @@
           "subscriptions"
         ],
         "title": "QmtDatasourceHealth",
+        "type": "object"
+      },
+      "QmtDownloadJobRequest": {
+        "additionalProperties": false,
+        "description": "Submit a history download job (QMT terminal local cache refresh).\n\n``base_periods`` must be a subset of the stored base periods {1m,5m,1d}\n(other periods are synthesized from them). The job runs serially in the\nbridge; poll ``GET /v1/qmt/download/{job_id}`` for completion.",
+        "properties": {
+          "base_periods": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Base Periods",
+            "type": "array"
+          },
+          "end_time": {
+            "pattern": "^\\d{8}(\\d{6})?$",
+            "title": "End Time",
+            "type": "string"
+          },
+          "start_time": {
+            "pattern": "^\\d{8}(\\d{6})?$",
+            "title": "Start Time",
+            "type": "string"
+          },
+          "stock_list": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Stock List",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stock_list",
+          "base_periods",
+          "start_time",
+          "end_time"
+        ],
+        "title": "QmtDownloadJobRequest",
         "type": "object"
       },
       "ResultRequest": {
@@ -1207,6 +1294,85 @@
           }
         },
         "summary": "Query Bars",
+        "tags": [
+          "V1"
+        ]
+      }
+    },
+    "/v1/qmt/download": {
+      "post": {
+        "operationId": "submit_qmt_download_v1_qmt_download_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QmtDownloadJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Qmt Download",
+        "tags": [
+          "V1"
+        ]
+      }
+    },
+    "/v1/qmt/download/{job_id}": {
+      "get": {
+        "operationId": "qmt_download_status_v1_qmt_download__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Qmt Download Status",
         "tags": [
           "V1"
         ]

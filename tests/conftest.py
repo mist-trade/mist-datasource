@@ -46,11 +46,15 @@ def log_exporter():
 @pytest.fixture
 async def qmt_client() -> AsyncGenerator[AsyncClient, None]:
     """Create an async HTTP client for testing QMT API."""
+    from src.datasource.qmt.history_download import QmtHistoryDownloadRegistry
     from src.datasource.qmt.realtime.gateway import QmtCommandGateway
 
     previous_gateway = qmt_app.state.qmt_command_gateway
     gateway = QmtCommandGateway()
     qmt_app.state.qmt_command_gateway = gateway
+    registry = getattr(qmt_app.state, "qmt_download_registry", None)
+    if isinstance(registry, QmtHistoryDownloadRegistry):
+        registry.set_command_gateway(gateway)
 
     try:
         async with AsyncClient(
@@ -59,3 +63,5 @@ async def qmt_client() -> AsyncGenerator[AsyncClient, None]:
             yield client
     finally:
         qmt_app.state.qmt_command_gateway = previous_gateway
+        if isinstance(registry, QmtHistoryDownloadRegistry):
+            registry.set_command_gateway(previous_gateway)

@@ -353,7 +353,7 @@
             "title": "Fields"
           },
           "fillData": {
-            "default": true,
+            "default": false,
             "title": "Filldata",
             "type": "boolean"
           },
@@ -735,6 +735,34 @@
           "symbol"
         ],
         "title": "TdxDividendFactorsQueryRequest",
+        "type": "object"
+      },
+      "TdxDownloadJobRequest": {
+        "properties": {
+          "base_periods": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Base Periods",
+            "type": "array"
+          },
+          "stock_list": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Stock List",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stock_list",
+          "base_periods"
+        ],
+        "title": "TdxDownloadJobRequest",
         "type": "object"
       },
       "TdxFinancialDataByDateQueryRequest": {
@@ -3214,6 +3242,85 @@
           }
         },
         "summary": "Query Securities",
+        "tags": [
+          "V1"
+        ]
+      }
+    },
+    "/v1/tdx/download": {
+      "post": {
+        "operationId": "submit_tdx_download_v1_tdx_download_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TdxDownloadJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Tdx Download",
+        "tags": [
+          "V1"
+        ]
+      }
+    },
+    "/v1/tdx/download/{job_id}": {
+      "get": {
+        "operationId": "tdx_download_status_v1_tdx_download__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tdx Download Status",
         "tags": [
           "V1"
         ]

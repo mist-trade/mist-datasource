@@ -113,19 +113,12 @@ STATE.send_dropped = 0
 STATE.send_failures = 0
 STATE.callback_holders = {}
 
-BRIDGE_BUILD_ID = "mist-qmt-realtime-bridge-v3.1"
+BRIDGE_BUILD_ID = "mist-qmt-realtime-bridge-v3.2"
 
-# call_native hard deny: trading/account method patterns are rejected in-bridge
-# regardless of the datasource classification guard (terminal has no trading
-# permission enabled; keep this invariant independent of terminal state).
-TRADING_DENY_PATTERNS: Tuple[str, ...] = (
-    "passorder",
-    "trade",
-    "order_",
-    "cancel_order",
-    "withdraw",
-    "account",
-)
+# Introspection probes BOTH API injection surfaces: ContextInfo attributes and
+# the framework-injected script globals (production probe 2026-09-09 verified
+# download_history_data lives on the globals surface, not ContextInfo).
+_INTROSPECTION_SURFACES = ("contextinfo", "globals")
 _NATIVE_METHOD_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
 BRIDGE_QUEUE_MAX = 1000
@@ -727,53 +720,54 @@ def _execute_history_command(
             data = ContextInfo.get_stock_list_in_sector(params.get("sector", "\u6caa\u6df1A\u80a1"))
             _log_call_ok("get_stock_list_in_sector", command)
             return {"ok": True, "result": _history_json_safe(data)}
-        if method == "call_native":
-            _log_call_start("call_native", command, params)
-            native_method = params.get("method")
-            if (
-                not isinstance(native_method, str)
-                or not _NATIVE_METHOD_NAME_RE.match(native_method)
-            ):
+        if method == "introspect_methods":
+            _log_call_start("introspect_methods", command, params)
+            report = _introspect_methods(ContextInfo, params)
+            _log_call_ok("introspect_methods", command)
+            return {"ok": True, "result": report}
+        if method == "download_history_data":
+            _log_call_start("download_history_data", command, params)
+            stockcode = params.get("stockcode")
+            periods_value = params.get("periods")
+            periods = (
+                [p for p in periods_value if isinstance(p, str)]
+                if isinstance(periods_value, list)
+                else []
+            )
+            start_time = params.get("startTime", "")
+            end_time = params.get("endTime", "")
+            downloader = globals().get("download_history_data")
+            if not callable(downloader):
+                downloader = getattr(ContextInfo, "download_history_data", None)
+            if not callable(downloader):
                 return {
                     "ok": False,
                     "error": {
-                        "code": "QMT_ADMIN_METHOD_INVALID",
-                        "message": "call_native requires a native method name",
-                        "retryable": False,
-                        "details": {"method": native_method},
+                        "code": "QMT_DOWNLOAD_API_UNAVAILABLE",
+                        "message": "download_history_data is not exposed by this runtime",
+                        "retryable": True,
+                        "details": {"stockcode": stockcode},
                     },
                 }
-            lowered = native_method.strip().lower()
-            for pattern in TRADING_DENY_PATTERNS:
-                if pattern in lowered:
-                    return {
-                        "ok": False,
-                        "error": {
-                            "code": "QMT_ADMIN_METHOD_FORBIDDEN",
-                            "message": "call_native cannot invoke trading or account methods",
-                            "retryable": False,
-                            "details": {
-                                "method": native_method,
-                                "pattern": pattern,
-                            },
-                        },
-                    }
-            native_callable = getattr(ContextInfo, native_method, None)
-            if not callable(native_callable):
+            if not isinstance(stockcode, str) or not stockcode or not periods:
                 return {
                     "ok": False,
                     "error": {
-                        "code": "QMT_ADMIN_METHOD_UNKNOWN",
-                        "message": "ContextInfo has no such method",
+                        "code": "QMT_DOWNLOAD_PARAMS_INVALID",
+                        "message": "download_history_data requires stockcode and periods",
                         "retryable": False,
-                        "details": {"method": native_method},
+                        "details": {"stockcode": stockcode, "periods": periods},
                     },
                 }
-            kwargs_value = params.get("kwargs")
-            kwargs = kwargs_value if isinstance(kwargs_value, dict) else {}
-            data = native_callable(**kwargs)
-            _log_call_ok("call_native", command)
-            return {"ok": True, "result": _history_json_safe(data)}
+            per_period: Dict[str, Any] = {}
+            for period in periods:
+                try:
+                    downloader(stockcode, period, start_time, end_time)
+                    per_period[period] = "ok"
+                except Exception as period_exc:
+                    per_period[period] = "failed: " + str(period_exc)[:120]
+            _log_call_ok("download_history_data", command)
+            return {"ok": True, "result": {"perPeriod": per_period}}
         return {
             "ok": False,
             "error": {
@@ -818,6 +812,43 @@ def _compute_runtime_fingerprint() -> str:
         digest.update(repr(code.co_consts).encode("utf-8", "backslashreplace"))
         digest.update(repr(code.co_names).encode("utf-8", "backslashreplace"))
     return digest.hexdigest()
+
+
+def _introspect_methods(ContextInfo: BridgeContextInfo, params: Mapping[str, Any]) -> Dict[str, Any]:
+    """Read-only availability report for candidate names on BOTH injection
+    surfaces (ContextInfo attributes + script globals). Never executes."""
+    candidates_value = params.get("candidates", [])
+    candidates = (
+        [c for c in candidates_value if isinstance(c, str)]
+        if isinstance(candidates_value, list)
+        else []
+    )
+    if len(candidates) > 32:
+        candidates = candidates[:32]
+    report: Dict[str, Any] = {}
+    for name in candidates:
+        if not isinstance(name, str) or not re.match(
+            r"^[A-Za-z_][A-Za-z0-9_]{0,63}$", name
+        ):
+            report[name] = {"valid": False}
+            continue
+        contextinfo_candidate = getattr(ContextInfo, name, None)
+        globals_candidate = globals().get(name)
+        report[name] = {
+            "contextinfo": {
+                "available": callable(contextinfo_candidate),
+                "type": type(contextinfo_candidate).__name__
+                if contextinfo_candidate is not None
+                else "missing",
+            },
+            "globals": {
+                "available": callable(globals_candidate),
+                "type": type(globals_candidate).__name__
+                if globals_candidate is not None
+                else "missing",
+            },
+        }
+    return report
 
 
 def _runtime_introspection(ContextInfo: BridgeContextInfo) -> Dict[str, Any]:

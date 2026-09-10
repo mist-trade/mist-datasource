@@ -122,6 +122,24 @@ Generated from the `qmt` FastAPI app in `builtin` mode.
 - Parameters: -
 - Responses: 200: -; 422: HTTPValidationError
 
+## POST /v1/qmt/download
+
+- Operation ID: `submit_qmt_download_v1_qmt_download_post`
+- Tags: V1
+- Summary: Submit Qmt Download
+- Request Body: `QmtDownloadJobRequest`
+- Parameters: -
+- Responses: 200: -; 422: HTTPValidationError
+
+## GET /v1/qmt/download/{job_id}
+
+- Operation ID: `qmt_download_status_v1_qmt_download__job_id__get`
+- Tags: V1
+- Summary: Qmt Download Status
+- Request Body: `-`
+- Parameters: job_id (path, string, required=true)
+- Responses: 200: -; 422: HTTPValidationError
+
 ## Schemas
 
 - `CommandRequest`
@@ -133,6 +151,7 @@ Generated from the `qmt` FastAPI app in `builtin` mode.
 - `QmtBridgeHealth`
 - `QmtCommandRejectionTotal`
 - `QmtDatasourceHealth`
+- `QmtDownloadJobRequest`
 - `ResultRequest`
 - `SubscriptionLeaseRequest`
 - `SubscriptionResultFailure`

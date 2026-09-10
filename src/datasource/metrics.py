@@ -84,6 +84,10 @@ def init_metrics() -> None:
         "mist_datasource_admin_call_total",
         description="Admin escape-hatch calls per source, method and result",
     )
+    _INSTRUMENTS["qmt_history_download"] = m.create_counter(
+        "mist_datasource_qmt_history_download_total",
+        description="QMT history download job outcomes per result",
+    )
 
 
 def register_snapshot_age_callback(source: str, factory: Callable[[], float | None]) -> None:
@@ -209,4 +213,15 @@ def record_admin_call(source: str, method: str, result: str) -> None:
     inst = _INSTRUMENTS.get("admin_call")
     if inst is not None:
         inst.add(1, {"source": source, "method": method, "result": result})
+
+
+def record_qmt_history_download(result: str) -> None:
+    """Record QMT history download job outcomes.
+
+    result is a bounded enum: ok | failed | in_session | disabled | invalid |
+    unsupported.
+    """
+    inst = _INSTRUMENTS.get("qmt_history_download")
+    if inst is not None:
+        inst.add(1, {"result": result})
 
